@@ -7,6 +7,29 @@ ABSENT_TOPICS = ["LoRA", "retrieval-augmented generation", "vector database", "R
                  "diffusion model", "prompt engineering", "ChatGPT", "Hugging Face",
                  "tool calling", "LLM agents", "mixture of experts"]
 
+# Written after a hand check of 50 generated questions: 31 were unusable. The patterns below catch 25 of those 31
+# and wrongly reject 1 of 19 good ones; the LLM check (self_contained) handles the rest.
+RULES = ("The question must make sense to a student who has NOT seen the passage: never say 'the passage', 'the text', "
+         "'the example' or 'the code', and do not ask about a specific number, array, variable or printed output. "
+         "Ask about a concept, a method, a reason or a definition. Give a short answer of one or two sentences.")
+PASSAGE_REF = re.compile(r"\b(passages?|the text|excerpts?|shown (above|below)|as shown|this example|"
+                         r"the example (above|below|project)|in example \d|figure \d|table \d)\b", re.I)
+NUMBER_PROBE = re.compile(r"\b(value of|the (median|mean|average|probability|reward|accuracy|rmse|score) (of|for|value)|"
+                          r"the (first|second|third|fourth|fifth) (element|instance|feature|row|item)|in state \S+|"
+                          r"action \d|first instance)\b", re.I)
+CODE_VARIABLE = re.compile(r"\b\w+_\w*\s+(array|dataset|variable|attribute|list|matrix|table)\b", re.I)
+
+
+def bad_question(q):
+    return bool(PASSAGE_REF.search(q) or NUMBER_PROBE.search(q) or CODE_VARIABLE.search(q))
+
+
+def self_contained(llm, q, model=SUPER):
+    r = llm.chat(model, "Could a student who has not seen this textbook's specific examples, code listings, figures or "
+                        "datasets answer this question from general machine-learning knowledge or the textbook's "
+                        f"explanations? Reply YES or NO.\n\nQuestion: {q}", max_tokens=8)
+    return r.strip().upper().startswith("YES")
+
 
 def parse_json(text):
     m = re.search(r"\{.*\}", text, re.S)
@@ -31,28 +54,39 @@ def _item(q, a, gold, chapter, answerable=True):
     return {"q": q, "a": a, "gold": gold, "chapter": chapter, "answerable": answerable, "src": "synthetic"}
 
 
-def gen_single(llm, chunks, n, seed=0, model=SUPER):
+def _usable(llm, j, model, llm_check):
+    if not (j and j.get("question") and j.get("answer")):
+        return False
+    return not bad_question(j["question"]) and (not llm_check or self_contained(llm, j["question"], model))
+
+
+def gen_single(llm, chunks, n, seed=0, model=SUPER, llm_check=False):
+    """Walk the chunks in random order until n usable questions exist (or the chunks run out)."""
+    order = list(chunks)
+    random.Random(seed).shuffle(order)
     out = []
-    for c in random.Random(seed).sample(chunks, min(n, len(chunks))):
-        j = parse_json(llm.chat(model, "Write ONE question that can be answered only from the passage below, "
-                                'plus a short answer. Reply with JSON only: {"question": "...", "answer": "..."}\n\n'
+    for c in order:
+        if len(out) >= n:
+            break
+        j = parse_json(llm.chat(model, "Write ONE question that can be answered from the passage below. " + RULES +
+                                ' Reply with JSON only: {"question": "...", "answer": "..."}\n\n'
                                 "Passage:\n" + c["text"], max_tokens=300))
-        if j and j.get("question") and j.get("answer"):
+        if _usable(llm, j, model, llm_check):
             out.append(_item(j["question"], j["answer"], [c["id"]], c["chapter"]))
     return out
 
 
-def gen_multi(llm, chunks, n, seed=0, model=SUPER):
+def gen_multi(llm, chunks, n, seed=0, model=SUPER, llm_check=False):
     rng, out, tries = random.Random(seed), [], 0
     while len(out) < n and tries < 5 * n + 5 and len(chunks) >= 2:
         tries += 1
         a, b = rng.sample(chunks, 2)
         if a["chapter"] == b["chapter"]:
             continue
-        j = parse_json(llm.chat(model, "Write ONE question that needs BOTH passages to answer, plus a short answer. "
-                                'Reply with JSON only: {"question": "...", "answer": "..."}\n\n'
+        j = parse_json(llm.chat(model, "Write ONE question that needs BOTH passages to answer. " + RULES +
+                                ' Reply with JSON only: {"question": "...", "answer": "..."}\n\n'
                                 f"Passage 1:\n{a['text']}\n\nPassage 2:\n{b['text']}", max_tokens=300))
-        if j and j.get("question") and j.get("answer"):
+        if _usable(llm, j, model, llm_check):
             out.append(_item(j["question"], j["answer"], [a["id"], b["id"]], a["chapter"]))
     return out
 
@@ -68,6 +102,14 @@ def gen_unanswerable(llm, all_chunks, topics, per_topic=8, model=SUPER):
         for q in (j or {}).get("questions", [])[:per_topic]:
             out.append(_item(q, None, [], "none", answerable=False))
     return out
+
+
+def load_handwritten_csv(path):
+    """question,answer rows -> items; a blank answer means the book cannot answer it."""
+    rows = list(csv.DictReader(open(path, encoding="utf-8-sig")))
+    return [{"id": f"hw-{i}", "q": r["question"].strip(), "a": r["answer"].strip() or None, "gold": [],
+             "chapter": "hand", "answerable": bool(r["answer"].strip()), "src": "hand"}
+            for i, r in enumerate(rows) if r["question"].strip()]
 
 
 def with_ids(items, prefix):

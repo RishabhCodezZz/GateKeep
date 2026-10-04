@@ -61,7 +61,8 @@ def questions(n_train="600", n_dev="100", n_test="300"):
     topics = {"train": qa.ABSENT_TOPICS[:6], "dev": qa.ABSENT_TOPICS[6:8], "test": qa.ABSENT_TOPICS[8:]}
     for split, n in (("train", int(n_train)), ("dev", int(n_dev)), ("test", int(n_test))):
         part = qa.chunks_in(chunks, sp[split])
-        items = qa.gen_single(llm, part, n) + qa.gen_multi(llm, part, n // 10)             + qa.gen_unanswerable(llm, chunks, topics[split])
+        items = (qa.gen_single(llm, part, n, llm_check=True) + qa.gen_multi(llm, part, n // 10, llm_check=True)
+                 + qa.gen_unanswerable(llm, chunks, topics[split]))
         qa.save(qa.with_ids(items, split), f"data/qa_{split}.jsonl")
         print(split, len(items), "items,", sum(not it["answerable"] for it in items), "unanswerable,",
               len(part), "chunks in", len(sp[split]), "chapters")
@@ -133,6 +134,36 @@ def gatedata():
                               "grounded": data.g3_rows(llm, index, items, by_id, real=real),
                               "sufficient": data.g4_rows(llm, items)}, split)
         print(split, "done")
+
+
+@command
+def handwritten(path="handwritten.csv"):
+    """Convert your question,answer CSV into data/handwritten.jsonl (a blank answer = the book cannot answer it)."""
+    from gatekeep import qa
+    items = qa.load_handwritten_csv(path)
+    Path("data").mkdir(exist_ok=True)
+    qa.save(items, "data/handwritten.jsonl")
+    print(len(items), "questions,", sum(not it["answerable"] for it in items), "unanswerable")
+
+
+@command
+def check_filter(review="review.csv"):
+    """Score the question filters against the y/n marks in review.csv (answerable rows only)."""
+    import csv
+    from gatekeep import qa
+    from gatekeep.llm import LLM
+    llm = LLM()
+    rows = [r for r in list(csv.reader(open(review, encoding="utf-8-sig")))[1:] if r[2].strip() and r[3].strip()]
+    table = Counter()
+    for _id, q, _a, mark in rows:
+        pattern_ok = not qa.bad_question(q)
+        both_ok = pattern_ok and qa.self_contained(llm, q)
+        table[("patterns", mark.lower(), "kept" if pattern_ok else "rejected")] += 1
+        table[("patterns+judge", mark.lower(), "kept" if both_ok else "rejected")] += 1
+    n_bad = sum(1 for r in rows if r[3].lower() == "n")
+    for stage in ("patterns", "patterns+judge"):
+        print(f"{stage:15s} bad questions removed: {table[(stage, 'n', 'rejected')]}/{n_bad} | "
+              f"good questions lost: {table[(stage, 'y', 'rejected')]}/{len(rows) - n_bad}")
 
 
 # --- new commands go above this line ---
