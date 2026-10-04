@@ -7,11 +7,15 @@ GEMMA, ULTRA, SUPER = "gemma", "ultra", "super"  # logical names, resolved to a 
 BACKENDS = {
     # Ollama Cloud free tier: unpublished GPU-time quota, 1 concurrent request (our client is serial)
     "ollama": dict(url="https://ollama.com/v1", key="OLLAMA_API_KEY", gap=0.0,
-                   models={GEMMA: "gemma4:31b", ULTRA: "nemotron-3-ultra", SUPER: "nemotron-3-super"}),
+                   models={GEMMA: "gemma4:31b", ULTRA: "nemotron-3-ultra", SUPER: "nemotron-3-super"},
+                   # thinking off: with it on, long prompts spent the whole token budget thinking and returned "" (measured
+                   # 2026-10-04: Super 144 -> 38 tokens). Gemma already defaults to off and "low" would turn it ON, so send nothing.
+                   extra={SUPER: {"reasoning_effort": "none"}, ULTRA: {"reasoning_effort": "none"}}),
     # NVIDIA NIM free tier: 40 requests/min shared across models
     "nim": dict(url="https://integrate.api.nvidia.com/v1", key="NVIDIA_API_KEY", gap=60 / 40,
                 models={GEMMA: "google/gemma-4-31b-it", ULTRA: "nvidia/nemotron-3-ultra-550b-a55b",
-                        SUPER: "nvidia/nemotron-3-super-120b-a12b"}),
+                        SUPER: "nvidia/nemotron-3-super-120b-a12b"},
+                extra={}),  # ponytail: NIM's thinking switch is untested; find it before routing a Nemotron model here
 }
 
 
@@ -32,6 +36,7 @@ class LLM:
         self._fake, self._clients = client, {}  # tests pass one fake client that serves every backend
         self.logical_calls = 0  # every chat() call, cached or not
         self.empty = 0          # real calls that came back empty
+        self.last_tokens = None  # completion tokens of the latest call (replayed from the cache on a hit)
         self.total_s = 0.0      # sum of ORIGINAL latencies, so cached reruns still report real speed
         self._last = {}         # per backend: time of the last real call
         self._lock = threading.Lock()
@@ -47,6 +52,8 @@ class LLM:
     def chat(self, model, prompt, system=None, max_tokens=512, temperature=0.0, extra=None):
         backend = self.routes.get(model, self.backend)
         cfg = BACKENDS[backend]
+        if extra is None:
+            extra = cfg["extra"].get(model)
         model = cfg["models"].get(model, model)
         msgs = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
         key = hashlib.sha256(json.dumps([backend, model, msgs, max_tokens, temperature, extra]).encode()).hexdigest()
@@ -55,6 +62,7 @@ class LLM:
         if row:
             hit = json.loads(row[0])
             self.total_s += hit["s"]
+            self.last_tokens = hit.get("n")
             return hit["t"]
         with self._lock:
             wait = cfg["gap"] - (time.time() - self._last.get(backend, 0.0))
@@ -67,11 +75,12 @@ class LLM:
             s = time.perf_counter() - t0
             self._last[backend] = time.time()
         text = r.choices[0].message.content or ""
+        self.last_tokens = getattr(getattr(r, "usage", None), "completion_tokens", None)
         self.total_s += s
         if not text.strip():  # a reasoning model that spent its whole budget thinking: never cache nothing
             self.empty += 1
             return text
-        self.db.execute("insert or replace into c values (?,?)", (key, json.dumps({"t": text, "s": s})))
+        self.db.execute("insert or replace into c values (?,?)", (key, json.dumps({"t": text, "s": s, "n": self.last_tokens})))
         self.db.commit()
         return text
 

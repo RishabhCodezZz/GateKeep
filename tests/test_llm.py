@@ -117,3 +117,40 @@ def test_purge_empty_removes_only_empty_cached_replies(tmp_path):
     llm.db.commit()
     assert llm.purge_empty() == 1
     assert llm.db.execute("select count(*) from c").fetchone()[0] == 1
+
+
+class FakeUsage(Fake):
+    def create(self, **kw):
+        self.n += 1
+        self.last = kw
+        msg = type("M", (), {"content": "hi"})()
+        usage = type("U", (), {"completion_tokens": 7})()
+        return type("R", (), {"choices": [type("C", (), {"message": msg})()], "usage": usage})()
+
+
+def test_thinking_is_off_by_default_for_nemotron_on_ollama_but_not_sent_to_gemma(tmp_path):
+    from gatekeep.llm import SUPER
+    f = Fake()
+    llm = LLM(str(tmp_path / "c.sqlite"), client=f, backend="ollama")
+    llm.chat(SUPER, "q")
+    assert f.last["extra_body"] == {"reasoning_effort": "none"}
+    llm.chat(ULTRA, "q")
+    assert f.last["extra_body"] == {"reasoning_effort": "none"}
+    llm.chat(GEMMA, "q")
+    assert f.last["extra_body"] is None  # reasoning_effort="low" would TURN ON Gemma's thinking
+
+
+def test_an_explicit_extra_overrides_the_default(tmp_path):
+    from gatekeep.llm import SUPER
+    f = Fake()
+    LLM(str(tmp_path / "c.sqlite"), client=f, backend="ollama").chat(SUPER, "q", extra={"reasoning_effort": "low"})
+    assert f.last["extra_body"] == {"reasoning_effort": "low"}
+
+
+def test_last_tokens_is_recorded_and_survives_the_cache(tmp_path):
+    llm = LLM(str(tmp_path / "c.sqlite"), client=FakeUsage())
+    llm.chat("m", "q")
+    assert llm.last_tokens == 7
+    llm.last_tokens = None
+    llm.chat("m", "q")  # cache hit
+    assert llm.last_tokens == 7

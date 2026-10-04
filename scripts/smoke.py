@@ -5,7 +5,7 @@ Backend comes from GATEKEEP_BACKEND (default "ollama"; needs OLLAMA_API_KEY). "n
 import sys, time
 
 sys.path.insert(0, "src")
-from gatekeep.llm import GEMMA, ULTRA, LLM, ollama_usage
+from gatekeep.llm import GEMMA, SUPER, ULTRA, LLM, ollama_usage
 
 
 def check(name, fn):
@@ -17,8 +17,16 @@ def check(name, fn):
 
 llm = LLM("cache/smoke.sqlite")
 print("backend:", llm.backend)
-check("gemma", lambda: repr(llm.chat(GEMMA, "Reply with the single word: ok", max_tokens=16)))
-check("ultra", lambda: repr(llm.chat(ULTRA, "Reply with the single word: ok", max_tokens=16)))
+
+
+def say(model):
+    """Reply + completion tokens. Tokens near 2-5 mean thinking is OFF; dozens mean it is eating the budget."""
+    return f"{llm.chat(model, 'Reply with the single word: ok', max_tokens=16)!r}, completion_tokens={llm.last_tokens}"
+
+
+check("gemma", lambda: say(GEMMA))
+check("super", lambda: say(SUPER))
+check("ultra", lambda: say(ULTRA))
 
 
 def quota_probe(n=20):
