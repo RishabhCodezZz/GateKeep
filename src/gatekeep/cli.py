@@ -31,16 +31,22 @@ def load_chunks(path="data/chunks.json"):
 
 @command
 def prepare(pdf):
-    """Parse the PDF with Docling and write data/book.docling.json + data/chunks.json."""
+    """Parse the PDF (reusing data/book.docling.json if present), chunk it by PDF-bookmark chapters, write data/chunks.json."""
     from gatekeep import corpus
     Path("data").mkdir(exist_ok=True)
-    doc = corpus.parse(pdf)
-    doc.save_as_json(Path("data/book.docling.json"))
-    chunks = corpus.chunk(doc)
+    saved = Path("data/book.docling.json")
+    if saved.exists():
+        doc = corpus.load(saved)
+    else:
+        doc = corpus.parse(pdf)
+        doc.save_as_json(saved)
+    starts = corpus.chapter_starts(pdf)
+    chunks = corpus.chunk(doc, starts=starts)
     json.dump(chunks, open("data/chunks.json", "w"))
+    counts = Counter(c["chapter"] for c in chunks)
     print(len(chunks), "chunks")
-    for ch, n in Counter(c["chapter"] for c in chunks).most_common():
-        print(f"{n:5d}  {ch}")
+    for ch in ["front"] + [t for _, t in starts]:
+        print(f"{counts.get(ch, 0):5d}  {ch}")
 
 
 # --- new commands go above this line ---

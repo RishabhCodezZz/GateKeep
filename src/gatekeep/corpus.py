@@ -1,4 +1,6 @@
 """Parse a document with Docling, cut it into heading-aware chunks, search and rerank them."""
+import re
+
 MAX_TOK = 300  # Laya reads ~512 tokens: question + chunk must fit
 EMB = "BAAI/bge-small-en-v1.5"
 RERANK = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -15,17 +17,44 @@ def parse(path):
     return conv.convert(path).document
 
 
-def chunk(doc, max_tokens=MAX_TOK, tag=None):
+def load(path):
+    from docling_core.types.doc import DoclingDocument
+    return DoclingDocument.load_from_json(path)
+
+
+def chapter_starts(pdf):
+    """[(start_page, 'Chapter N. Title'), ..., (first_appendix_page, 'back')] from the PDF bookmarks.
+    Docling's headings are a flat list of section titles, so chapters come from the bookmarks instead."""
+    import pymupdf
+    toc = pymupdf.open(pdf).get_toc(simple=True)
+    out = [(p, t) for lvl, t, p in toc if lvl == 2 and re.match(r"Chapter \d+\. ", t)]
+    back = next((p for lvl, t, p in toc if lvl == 1 and t.startswith("Appendix")), None)
+    return sorted(out + ([(back, "back")] if back else []))
+
+
+def chapter_of(page, starts):
+    name = "front"
+    for start, title in starts:
+        if page >= start:
+            name = title
+    return name
+
+
+def chunk(doc, max_tokens=MAX_TOK, tag=None, starts=None):
     from docling.chunking import HybridChunker
     from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
     from transformers import AutoTokenizer
     tok = HuggingFaceTokenizer(tokenizer=AutoTokenizer.from_pretrained(EMB), max_tokens=max_tokens)
     ch = HybridChunker(tokenizer=tok)
-    out = []
+    out, chapter = [], "front"
     for i, c in enumerate(ch.chunk(dl_doc=doc)):
         h = list(c.meta.headings or [])
+        pages = [pv.page_no for it in c.meta.doc_items for pv in it.prov]
+        if starts and pages:
+            chapter = chapter_of(min(pages), starts)  # a chunk with no page info keeps the previous chapter
         out.append({"id": i, "text": c.text, "ctx": ch.contextualize(c),
-                    "chapter": tag or (h[0] if h else "front"), "section": " > ".join(h)})
+                    "chapter": tag or (chapter if starts else (h[0] if h else "front")),
+                    "section": " > ".join(h), "page": min(pages) if pages else None})
     return out
 
 
