@@ -128,3 +128,45 @@ def build_graph(index, llm, gates, model=GEMMA, use_gates=True, max_rewrites=2, 
     g.add_edge("direct", END)
     g.add_edge("refuse", END)
     return g.compile()
+
+
+def build_agents_graph(index, llm, gates, model=GEMMA, use_gates=True, max_rewrites=2, max_regen=2):
+    """Same logic as build_graph plus critic feedback to the writer, wired as Researcher/Writer/Critic subgraphs."""
+    n, after_route, _, after_check = make_nodes(
+        index, llm, gates, model, use_gates, max_rewrites, max_regen, feedback=True)
+
+    researcher = StateGraph(S)
+    for name in ("retrieve", "grade", "rewrite"):
+        researcher.add_node(name, n[name])
+    researcher.set_entry_point("retrieve")
+    researcher.add_edge("retrieve", "grade")
+    researcher.add_conditional_edges(
+        "grade", lambda s: "rewrite" if not s["docs"] and s.get("rewrites", 0) < max_rewrites else END,
+        {"rewrite": "rewrite", END: END})
+    researcher.add_edge("rewrite", "retrieve")
+
+    writer = StateGraph(S)
+    writer.add_node("generate", n["generate"])
+    writer.set_entry_point("generate")
+    writer.add_edge("generate", END)
+
+    critic = StateGraph(S)
+    critic.add_node("check", n["check"])
+    critic.set_entry_point("check")
+    critic.add_edge("check", END)
+
+    g = StateGraph(S)
+    for name in ("route", "direct", "refuse"):
+        g.add_node(name, n[name])
+    g.add_node("researcher", researcher.compile())
+    g.add_node("writer", writer.compile())
+    g.add_node("critic", critic.compile())
+    g.set_entry_point("route")
+    g.add_conditional_edges("route", after_route, {"retrieve": "researcher", "direct": "direct", "refuse": "refuse"})
+    g.add_conditional_edges("researcher", lambda s: "writer" if s["docs"] else "refuse",
+                            {"writer": "writer", "refuse": "refuse"})
+    g.add_edge("writer", "critic")
+    g.add_conditional_edges("critic", after_check, {"generate": "writer", END: END})
+    g.add_edge("direct", END)
+    g.add_edge("refuse", END)
+    return g.compile()

@@ -1,5 +1,5 @@
 from gatekeep.gates import Gate
-from gatekeep.graph import REFUSAL, build_graph
+from gatekeep.graph import REFUSAL, build_agents_graph, build_graph
 
 
 class FakeIndex:
@@ -78,3 +78,43 @@ def test_baseline_without_gates_makes_no_gate_calls():
 def test_gate_calls_are_counted():
     r = app(happy).invoke({"q": "x"})
     assert r["gate_calls"] == 1 + 5 + 1 + 1  # route + 5 chunks + grounded + sufficient
+
+
+
+def test_agents_graph_passes_critic_feedback_to_writer():
+    llm = FakeLLM()
+    seen = {"n": 0}
+
+    def fn(g, t):
+        if g == "route":
+            return ("retrieve", 1.0)
+        if g == "grounded":
+            seen["n"] += 1
+            return ("no", 1.0) if seen["n"] == 1 else ("yes", 1.0)
+        return ("yes", 1.0)
+
+    r = build_agents_graph(FakeIndex(), llm, gates(fn)).invoke({"q": "x"})
+    assert r["regens"] == 1 and r["answer"] == "an answer"
+    assert any("not supported by the passages" in p for p in llm.prompts)
+
+
+def test_flat_graph_sends_no_feedback_to_the_writer():
+    llm = FakeLLM()
+    seen = {"n": 0}
+
+    def fn(g, t):
+        if g == "route":
+            return ("retrieve", 1.0)
+        if g == "grounded":
+            seen["n"] += 1
+            return ("no", 1.0) if seen["n"] == 1 else ("yes", 1.0)
+        return ("yes", 1.0)
+
+    app(fn, llm).invoke({"q": "x"})
+    assert not any("reviewer said" in p for p in llm.prompts)
+
+
+def test_agents_graph_refuses_when_nothing_relevant():
+    r = build_agents_graph(FakeIndex(), FakeLLM(),
+                           gates(lambda g, t: ("retrieve", 1.0) if g == "route" else ("no", 1.0))).invoke({"q": "x"})
+    assert r["answer"] == REFUSAL
