@@ -1,0 +1,12 @@
+openai>=1.40
+langgraph
+docling
+sentence-transformers
+faiss-cpu
+scikit-learn
+numpy
+matplotlib
+laya
+huggingface_hub
+pymupdf
+pytest
