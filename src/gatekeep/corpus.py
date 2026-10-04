@@ -5,8 +5,14 @@ RERANK = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 
 def parse(path):
-    from docling.document_converter import DocumentConverter
-    return DocumentConverter().convert(path).document
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import PdfPipelineOptions
+    from docling.document_converter import DocumentConverter, PdfFormatOption
+    # ponytail: OCR off. The book has a real text layer (~1,900 chars/page, 0 of 40 sampled pages empty);
+    # OCR on CPU is hours slow and only adds noise. Turn it on for a scanned PDF.
+    opts = PdfPipelineOptions(do_ocr=False)
+    conv = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)})
+    return conv.convert(path).document
 
 
 def chunk(doc, max_tokens=MAX_TOK, tag=None):
