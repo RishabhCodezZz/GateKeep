@@ -2,10 +2,10 @@
 
 Backend comes from GATEKEEP_BACKEND (default "ollama"; needs OLLAMA_API_KEY). "nim" needs NVIDIA_API_KEY.
 """
-import json, os, sys, time, urllib.request
+import sys, time
 
 sys.path.insert(0, "src")
-from gatekeep.llm import GEMMA, ULTRA, LLM
+from gatekeep.llm import GEMMA, ULTRA, LLM, ollama_usage
 
 
 def check(name, fn):
@@ -21,20 +21,13 @@ check("gemma", lambda: repr(llm.chat(GEMMA, "Reply with the single word: ok", ma
 check("ultra", lambda: repr(llm.chat(ULTRA, "Reply with the single word: ok", max_tokens=16)))
 
 
-def usage():
-    # ponytail: /api/usage is reported by third parties, not confirmed in Ollama's docs; may 404 or change shape
-    req = urllib.request.Request("https://ollama.com/api/usage",
-                                 headers={"Authorization": "Bearer " + os.environ["OLLAMA_API_KEY"]})
-    return json.load(urllib.request.urlopen(req, timeout=20))
-
-
 def quota_probe(n=20):
-    """How much free quota do n distinct short Nemotron calls use? Extrapolate to the ~6,000 Ultra calls we need."""
-    before = usage()
+    """How much free quota do n distinct short Nemotron calls use? Too small to move the 3-decimal meter; scripts/quota_probe.py does the real measurement."""
+    before = ollama_usage()
     t0 = time.time()
     for i in range(n):
         llm.chat(ULTRA, f"Reply with the number {i}.", max_tokens=8)
-    return f"{n} calls in {time.time() - t0:.0f}s\nbefore: {before}\nafter:  {usage()}"
+    return f"{n} calls in {time.time() - t0:.0f}s\nbefore: {before}\nafter:  {ollama_usage()}"
 
 
 if llm.backend == "ollama":

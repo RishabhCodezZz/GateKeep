@@ -1,5 +1,5 @@
 """Chat client for Gemma/Nemotron (Ollama Cloud or NVIDIA NIM) with a disk cache that remembers each call's original latency."""
-import hashlib, json, os, sqlite3, threading, time
+import hashlib, json, os, sqlite3, threading, time, urllib.request
 
 from openai import OpenAI
 
@@ -52,3 +52,11 @@ class LLM:
         self.db.execute("insert or replace into c values (?,?)", (key, json.dumps({"t": text, "s": s})))
         self.db.commit()
         return text
+
+
+def ollama_usage():
+    """Fraction (0-1, rounded to 3 decimals) of the monthly Ollama Cloud quota used so far.
+    ponytail: /api/usage is not in Ollama's docs; seen working on 2026-10-04 (3-decimal rounding)."""
+    req = urllib.request.Request("https://ollama.com/api/usage",
+                                 headers={"Authorization": "Bearer " + os.environ["OLLAMA_API_KEY"]})
+    return json.load(urllib.request.urlopen(req, timeout=20))["limits"]["monthly"]["usage"]
