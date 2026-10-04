@@ -3,14 +3,15 @@ import hashlib, json, os, sqlite3, threading, time, urllib.request
 
 from openai import OpenAI
 
-GEMMA, ULTRA = "gemma", "ultra"  # logical names, resolved to a model id per backend
+GEMMA, ULTRA, SUPER = "gemma", "ultra", "super"  # logical names, resolved to a model id per backend
 BACKENDS = {
     # Ollama Cloud free tier: unpublished GPU-time quota, 1 concurrent request (our client is serial)
     "ollama": dict(url="https://ollama.com/v1", key="OLLAMA_API_KEY", gap=0.0,
-                   models={GEMMA: "gemma4:31b", ULTRA: "nemotron-3-ultra"}),
+                   models={GEMMA: "gemma4:31b", ULTRA: "nemotron-3-ultra", SUPER: "nemotron-3-super"}),
     # NVIDIA NIM free tier: 40 requests/min shared across models
     "nim": dict(url="https://integrate.api.nvidia.com/v1", key="NVIDIA_API_KEY", gap=60 / 40,
-                models={GEMMA: "google/gemma-4-31b-it", ULTRA: "nvidia/nemotron-3-ultra-550b-a55b"}),
+                models={GEMMA: "google/gemma-4-31b-it", ULTRA: "nvidia/nemotron-3-ultra-550b-a55b",
+                        SUPER: "nvidia/nemotron-3-super-120b-a12b"}),
 }
 
 

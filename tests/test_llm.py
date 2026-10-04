@@ -1,5 +1,5 @@
 import pytest
-from gatekeep.llm import GEMMA, LLM, ULTRA
+from gatekeep.llm import GEMMA, LLM, SUPER, ULTRA
 
 
 class Fake:
@@ -42,14 +42,17 @@ def test_different_temperature_is_a_different_call(tmp_path):
 
 
 def test_alias_resolves_to_each_backends_model_id(tmp_path):
-    for backend, gemma, ultra in (("nim", "google/gemma-4-31b-it", "nvidia/nemotron-3-ultra-550b-a55b"),
-                                  ("ollama", "gemma4:31b", "nemotron-3-ultra")):
+    for backend, gemma, ultra, sup in (("nim", "google/gemma-4-31b-it", "nvidia/nemotron-3-ultra-550b-a55b",
+                                        "nvidia/nemotron-3-super-120b-a12b"),
+                                       ("ollama", "gemma4:31b", "nemotron-3-ultra", "nemotron-3-super")):
         f = Fake()
         llm = LLM(str(tmp_path / f"{backend}.sqlite"), client=f, backend=backend)
         llm.chat(GEMMA, "q")
         assert f.last["model"] == gemma
         llm.chat(ULTRA, "q")
         assert f.last["model"] == ultra
+        llm.chat(SUPER, "q")
+        assert f.last["model"] == sup
 
 
 def test_same_prompt_on_another_backend_is_not_a_cache_hit(tmp_path):
