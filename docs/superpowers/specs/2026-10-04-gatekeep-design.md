@@ -14,7 +14,7 @@ In an agentic RAG graph, an LLM is normally called for every small judgment ("is
 
 ## Corpus
 
-Primary: Géron, *Hands-On ML with Scikit-Learn, Keras & TensorFlow* (2nd ed.). Parsed once with **Docling**, chunked with Docling's HybridChunker (tokenizer = bge-small, `max_tokens=300`, because Laya reads ~512 tokens and G2 input is question + chunk). Each chunk keeps `chapter` and `section`.
+Primary: Géron, *Hands-On ML with Scikit-Learn, Keras & TensorFlow* (2nd ed.). Parsed once with **Docling**, chunked with Docling's HybridChunker (tokenizer = bge-small, `max_tokens=300`, because Laya reads ~512 tokens and G2 input is question + chunk). Each chunk keeps `section` (Docling heading path) and `page`; its `chapter` comes from the PDF bookmarks by page (Docling's headings are a flat list of section titles, not chapters).
 The book is copyrighted: it and everything derived from it stay in **private** storage (git-ignored `data/`, `cache/`; private HF dataset repo for persistence between Kaggle sessions). The public repo ships code and aggregate results only.
 Out-of-distribution corpus and public-demo corpus: the scikit-learn user guide (HTML pages; license to be confirmed on first fetch, believed BSD-3).
 
