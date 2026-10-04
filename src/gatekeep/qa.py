@@ -61,7 +61,7 @@ def gen_unanswerable(llm, all_chunks, topics, per_topic=8, model=SUPER):
     blob = " ".join(c["text"] for c in all_chunks).lower()
     out = []
     for t in topics:
-        if t.lower() in blob:  # the book does mention it, so it is not a valid trap
+        if re.search(r"\b" + re.escape(t.lower()) + r"\b", blob):  # a whole-word mention: not a valid trap
             continue
         j = parse_json(llm.chat(model, f'Write {per_topic} different questions a student might ask about "{t}". '
                                 'JSON only: {"questions": ["..."]}', max_tokens=500))

@@ -60,3 +60,9 @@ def test_with_ids_save_load_roundtrip(tmp_path):
 
 def test_chunks_in_filters_by_chapter():
     assert [c["id"] for c in qa.chunks_in(CH, {"Ch0"})] == [0, 4]
+
+
+def test_unanswerable_does_not_skip_a_topic_that_only_appears_inside_a_word():
+    chunks = [{"id": 0, "text": "We hold out an exploration set.", "chapter": "c", "section": ""}]
+    items = qa.gen_unanswerable(FakeLLM('{"questions": ["What is LoRA?"]}'), chunks, ["LoRA"], per_topic=1)
+    assert len(items) == 1  # "lora" is inside "exploration", not a mention of LoRA

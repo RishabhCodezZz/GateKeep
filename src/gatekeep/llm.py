@@ -16,22 +16,39 @@ BACKENDS = {
 
 
 class LLM:
-    def __init__(self, cache_path="cache/llm.sqlite", client=None, backend=None):
+    """routes = {logical_model: backend} sends one model to another provider (env GATEKEEP_ROUTES="super=nim,ultra=ollama")."""
+
+    def __init__(self, cache_path="cache/llm.sqlite", client=None, backend=None, routes=None):
         self.backend = backend or os.environ.get("GATEKEEP_BACKEND", "ollama")
-        self.cfg = BACKENDS[self.backend]
+        BACKENDS[self.backend]  # a typo fails here, not on the first call
+        if routes is None:
+            routes = dict(p.strip().split("=") for p in os.environ.get("GATEKEEP_ROUTES", "").split(",") if p.strip())
+        self.routes = {m: b.strip() for m, b in routes.items()}
+        for b in self.routes.values():
+            BACKENDS[b]
         os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
         self.db = sqlite3.connect(cache_path, check_same_thread=False)
         self.db.execute("create table if not exists c (k text primary key, v text)")
-        self.client = client or OpenAI(api_key=os.environ[self.cfg["key"]], base_url=self.cfg["url"])
+        self._fake, self._clients = client, {}  # tests pass one fake client that serves every backend
         self.logical_calls = 0  # every chat() call, cached or not
         self.total_s = 0.0      # sum of ORIGINAL latencies, so cached reruns still report real speed
-        self._last = 0.0
+        self._last = {}         # per backend: time of the last real call
         self._lock = threading.Lock()
 
+    def _client(self, backend):
+        if self._fake:
+            return self._fake
+        if backend not in self._clients:
+            cfg = BACKENDS[backend]
+            self._clients[backend] = OpenAI(api_key=os.environ[cfg["key"]], base_url=cfg["url"])
+        return self._clients[backend]
+
     def chat(self, model, prompt, system=None, max_tokens=512, temperature=0.0, extra=None):
-        model = self.cfg["models"].get(model, model)
+        backend = self.routes.get(model, self.backend)
+        cfg = BACKENDS[backend]
+        model = cfg["models"].get(model, model)
         msgs = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
-        key = hashlib.sha256(json.dumps([self.backend, model, msgs, max_tokens, temperature, extra]).encode()).hexdigest()
+        key = hashlib.sha256(json.dumps([backend, model, msgs, max_tokens, temperature, extra]).encode()).hexdigest()
         self.logical_calls += 1
         row = self.db.execute("select v from c where k=?", (key,)).fetchone()
         if row:
@@ -39,15 +56,15 @@ class LLM:
             self.total_s += hit["s"]
             return hit["t"]
         with self._lock:
-            wait = self.cfg["gap"] - (time.time() - self._last)
+            wait = cfg["gap"] - (time.time() - self._last.get(backend, 0.0))
             if wait > 0:
                 time.sleep(wait)
             t0 = time.perf_counter()
-            r = self.client.chat.completions.create(
+            r = self._client(backend).chat.completions.create(
                 model=model, messages=msgs, max_tokens=max_tokens,
                 temperature=temperature, extra_body=extra)
             s = time.perf_counter() - t0
-            self._last = time.time()
+            self._last[backend] = time.time()
         text = r.choices[0].message.content or ""
         self.total_s += s
         self.db.execute("insert or replace into c values (?,?)", (key, json.dumps({"t": text, "s": s})))

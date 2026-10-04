@@ -65,3 +65,27 @@ def test_same_prompt_on_another_backend_is_not_a_cache_hit(tmp_path):
 def test_unknown_backend_is_an_error(tmp_path):
     with pytest.raises(KeyError):
         LLM(str(tmp_path / "c.sqlite"), client=Fake(), backend="nope")
+
+
+def test_routes_send_one_model_to_another_backend(tmp_path):
+    from gatekeep.llm import SUPER
+    f = Fake()
+    llm = LLM(str(tmp_path / "c.sqlite"), client=f, backend="ollama", routes={SUPER: "nim"})
+    llm.chat(SUPER, "q")
+    assert f.last["model"] == "nvidia/nemotron-3-super-120b-a12b"
+    llm.chat(GEMMA, "q")
+    assert f.last["model"] == "gemma4:31b"
+
+
+def test_routes_can_come_from_the_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("GATEKEEP_ROUTES", "super=nim, ultra=ollama")
+    llm = LLM(str(tmp_path / "c.sqlite"), client=Fake())
+    assert llm.routes == {"super": "nim", "ultra": "ollama"}
+
+
+def test_same_prompt_routed_to_another_backend_is_not_a_cache_hit(tmp_path):
+    from gatekeep.llm import SUPER
+    f, db = Fake(), str(tmp_path / "c.sqlite")
+    LLM(db, client=f, backend="ollama").chat(SUPER, "q")
+    LLM(db, client=f, backend="ollama", routes={SUPER: "nim"}).chat(SUPER, "q")
+    assert f.n == 2
