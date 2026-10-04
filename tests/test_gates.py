@@ -1,0 +1,55 @@
+from gatekeep.gates import Cascade, Gate, LLMGate, SkGate
+
+
+class FakeLLM:
+    def __init__(self, reply):
+        self.reply = reply
+
+    def chat(self, model, prompt, **kw):
+        return self.reply
+
+
+class Fixed(Gate):
+    def __init__(self, label, conf):
+        self.label, self.conf = label, conf
+
+    def decide_many(self, gate, texts):
+        return [(self.label, self.conf)] * len(texts)
+
+
+def test_llm_gate_parses_yes_no():
+    assert LLMGate(FakeLLM("Yes, it does.")).decide("grade", "x") == ("yes", 1.0)
+    assert LLMGate(FakeLLM("no")).decide("grade", "x") == ("no", 1.0)
+
+
+def test_llm_gate_parses_choice_label():
+    assert LLMGate(FakeLLM("out_of_scope")).decide("route", "x")[0] == "out_of_scope"
+
+
+def test_llm_gate_unparseable_uses_default_and_counts():
+    g = LLMGate(FakeLLM("???"))
+    assert g.decide("route", "x") == ("retrieve", 0.0)
+    assert g.decide("grade", "x") == ("no", 0.0)
+    assert g.unparsed == 2
+
+
+def test_llm_gate_counts_every_decision_it_answers():
+    g = LLMGate(FakeLLM("yes"))
+    g.decide_many("grade", ["a", "b", "c"])
+    assert g.llm_used == 3
+
+
+def test_cascade_escalates_only_below_tau():
+    slow = LLMGate(FakeLLM("no"))
+    c = Cascade(Fixed("yes", 0.6), slow, tau=0.8)
+    assert c.decide("grade", "x") == ("no", 1.0) and c.escalated == 1
+    c2 = Cascade(Fixed("yes", 0.9), slow, tau=0.8)
+    assert c2.decide("grade", "x") == ("yes", 0.9) and c2.escalated == 0 and c2.seen == 1
+
+
+def test_sk_gate_learns_a_trivial_rule():
+    sk = SkGate()
+    texts = ["good great fine", "good nice great", "bad awful poor", "bad poor awful"] * 3
+    sk.fit("grade", texts, ["yes", "yes", "no", "no"] * 3)
+    (l1, p1), (l2, _) = sk.decide_many("grade", ["great good", "awful bad"])
+    assert (l1, l2) == ("yes", "no") and p1 > 0.5
