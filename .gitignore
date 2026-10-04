@@ -9,3 +9,8 @@ __pycache__/
 .venv/
 CLAUDE.md
 notebooks/*_output.ipynb
+
+# private: derived from the book
+/review*.csv
+/handwritten*.jsonl
+/handwritten*.csv
