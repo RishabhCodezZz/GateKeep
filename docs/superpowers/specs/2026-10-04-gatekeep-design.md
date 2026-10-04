@@ -42,10 +42,10 @@ Backends: `LLMGate` (Gemma, thinking off), `SkGate` (TF-IDF + logistic regressio
 Variants: **V0** no gates · **V1** all gates by Gemma · **V2** all gates by Laya · **V3** Laya→Gemma cascade.
 Multi-agent ablation: flat graph (blind retry) vs Researcher / Writer / Critic subgraphs where the Critic passes its reason to the Writer. The measured difference is the feedback channel; the subgraph split itself is structure.
 
-## Models (all via NVIDIA NIM free tier, 40 requests/min shared)
+## Models (via Ollama Cloud with the author's API key; NVIDIA NIM is a switchable fallback)
 
-- `google/gemma-4-31b-it`: answer writer and the baseline LLM judge (a realistic mid-size judge, so the comparison is not a strawman).
-- `nvidia/nemotron-3-ultra-550b-a55b`: one-off labeler for training data and grader of final answers (different family from the writer, so no self-grading).
+- Gemma 4 31B (`gemma4:31b` on Ollama): answer writer and the baseline LLM judge (a realistic mid-size judge, so the comparison is not a strawman).
+- Nemotron 3 Ultra (`nemotron-3-ultra` on Ollama): one-off labeler for training data and grader of final answers (different family from the writer, so no self-grading).
 - Laya: `convaiinnovations/laya`, typed-decisions checkpoint as the fine-tuning base; one fine-tuned copy per gate on Kaggle 2×T4.
 
 ## Data and splits
@@ -76,7 +76,7 @@ GitHub repo (code, results CSV/PNG, README with the plots), write-up in the READ
 1. Laya weak on G3/G4 (hard tasks, small window) → the cascade covers it; report honestly.
 2. Docling mangles code/equations or chapter detection → compare with PDF bookmarks; fallback PyMuPDF4LLM.
 3. LLM-made labels are not ground truth → hand-check 50, use human questions.
-4. Free-tier limits or model changes → cache every call, pin model IDs, log versions.
+4. Free-tier limits or model changes → cache every call, pin model IDs, log versions. Ollama Cloud's free quota is unpublished and GPU-time based; Task 1 measures it before we commit, with NIM (40 req/min, no daily cap) as the fallback.
 5. Kaggle sessions end → persist `data/ cache/ results/ models/` to a private HF dataset repo.
 6. Laya API details taken from its README summary (fine-tune API, noul answer encoding) → verified in Tasks 1 and 8 before use.
 

@@ -1,28 +1,36 @@
-"""NVIDIA NIM chat client with a disk cache that remembers each call's original latency."""
+"""Chat client for Gemma/Nemotron (Ollama Cloud or NVIDIA NIM) with a disk cache that remembers each call's original latency."""
 import hashlib, json, os, sqlite3, threading, time
 
 from openai import OpenAI
 
-NIM_URL = "https://integrate.api.nvidia.com/v1"
-GEMMA = "google/gemma-4-31b-it"
-ULTRA = "nvidia/nemotron-3-ultra-550b-a55b"
-MIN_GAP = 60 / 40  # free tier: 40 requests/min shared across all models
+GEMMA, ULTRA = "gemma", "ultra"  # logical names, resolved to a model id per backend
+BACKENDS = {
+    # Ollama Cloud free tier: unpublished GPU-time quota, 1 concurrent request (our client is serial)
+    "ollama": dict(url="https://ollama.com/v1", key="OLLAMA_API_KEY", gap=0.0,
+                   models={GEMMA: "gemma4:31b", ULTRA: "nemotron-3-ultra"}),
+    # NVIDIA NIM free tier: 40 requests/min shared across models
+    "nim": dict(url="https://integrate.api.nvidia.com/v1", key="NVIDIA_API_KEY", gap=60 / 40,
+                models={GEMMA: "google/gemma-4-31b-it", ULTRA: "nvidia/nemotron-3-ultra-550b-a55b"}),
+}
 
 
 class LLM:
-    def __init__(self, cache_path="cache/llm.sqlite", client=None):
+    def __init__(self, cache_path="cache/llm.sqlite", client=None, backend=None):
+        self.backend = backend or os.environ.get("GATEKEEP_BACKEND", "ollama")
+        self.cfg = BACKENDS[self.backend]
         os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
         self.db = sqlite3.connect(cache_path, check_same_thread=False)
         self.db.execute("create table if not exists c (k text primary key, v text)")
-        self.client = client or OpenAI(api_key=os.environ["NVIDIA_API_KEY"], base_url=NIM_URL)
+        self.client = client or OpenAI(api_key=os.environ[self.cfg["key"]], base_url=self.cfg["url"])
         self.logical_calls = 0  # every chat() call, cached or not
         self.total_s = 0.0      # sum of ORIGINAL latencies, so cached reruns still report real speed
         self._last = 0.0
         self._lock = threading.Lock()
 
     def chat(self, model, prompt, system=None, max_tokens=512, temperature=0.0, extra=None):
+        model = self.cfg["models"].get(model, model)
         msgs = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
-        key = hashlib.sha256(json.dumps([model, msgs, max_tokens, temperature, extra]).encode()).hexdigest()
+        key = hashlib.sha256(json.dumps([self.backend, model, msgs, max_tokens, temperature, extra]).encode()).hexdigest()
         self.logical_calls += 1
         row = self.db.execute("select v from c where k=?", (key,)).fetchone()
         if row:
@@ -30,7 +38,7 @@ class LLM:
             self.total_s += hit["s"]
             return hit["t"]
         with self._lock:
-            wait = MIN_GAP - (time.time() - self._last)
+            wait = self.cfg["gap"] - (time.time() - self._last)
             if wait > 0:
                 time.sleep(wait)
             t0 = time.perf_counter()

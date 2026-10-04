@@ -1,16 +1,18 @@
 import pytest
-from gatekeep.llm import LLM
+from gatekeep.llm import GEMMA, LLM, ULTRA
 
 
 class Fake:
     """Mimics openai.OpenAI().chat.completions.create."""
     def __init__(self):
         self.n = 0
+        self.last = {}
         self.chat = self
         self.completions = self
 
     def create(self, **kw):
         self.n += 1
+        self.last = kw
         msg = type("M", (), {"content": "hi"})()
         return type("R", (), {"choices": [type("C", (), {"message": msg})()]})()
 
@@ -37,3 +39,26 @@ def test_different_temperature_is_a_different_call(tmp_path):
     llm.chat("m", "q", temperature=0.0)
     llm.chat("m", "q", temperature=0.7)
     assert f.n == 2
+
+
+def test_alias_resolves_to_each_backends_model_id(tmp_path):
+    for backend, gemma, ultra in (("nim", "google/gemma-4-31b-it", "nvidia/nemotron-3-ultra-550b-a55b"),
+                                  ("ollama", "gemma4:31b", "nemotron-3-ultra")):
+        f = Fake()
+        llm = LLM(str(tmp_path / f"{backend}.sqlite"), client=f, backend=backend)
+        llm.chat(GEMMA, "q")
+        assert f.last["model"] == gemma
+        llm.chat(ULTRA, "q")
+        assert f.last["model"] == ultra
+
+
+def test_same_prompt_on_another_backend_is_not_a_cache_hit(tmp_path):
+    f, db = Fake(), str(tmp_path / "shared.sqlite")
+    LLM(db, client=f, backend="nim").chat(GEMMA, "q")
+    LLM(db, client=f, backend="ollama").chat(GEMMA, "q")
+    assert f.n == 2
+
+
+def test_unknown_backend_is_an_error(tmp_path):
+    with pytest.raises(KeyError):
+        LLM(str(tmp_path / "c.sqlite"), client=Fake(), backend="nope")
