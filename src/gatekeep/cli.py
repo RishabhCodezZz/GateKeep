@@ -68,6 +68,13 @@ def questions(n_train="600", n_dev="100", n_test="300"):
     qa.review_sample(qa.load("data/qa_test.jsonl"), 50, "data/review.csv")
 
 
+@command
+def purge_empty():
+    """Delete empty replies from the call cache (they were cached before the fix, so retries kept returning nothing)."""
+    from gatekeep.llm import LLM
+    print("purged", LLM().purge_empty(), "empty cached replies")
+
+
 # --- new commands go above this line ---
 
 if __name__ == "__main__":

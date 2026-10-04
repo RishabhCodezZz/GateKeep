@@ -31,6 +31,7 @@ class LLM:
         self.db.execute("create table if not exists c (k text primary key, v text)")
         self._fake, self._clients = client, {}  # tests pass one fake client that serves every backend
         self.logical_calls = 0  # every chat() call, cached or not
+        self.empty = 0          # real calls that came back empty
         self.total_s = 0.0      # sum of ORIGINAL latencies, so cached reruns still report real speed
         self._last = {}         # per backend: time of the last real call
         self._lock = threading.Lock()
@@ -67,9 +68,19 @@ class LLM:
             self._last[backend] = time.time()
         text = r.choices[0].message.content or ""
         self.total_s += s
+        if not text.strip():  # a reasoning model that spent its whole budget thinking: never cache nothing
+            self.empty += 1
+            return text
         self.db.execute("insert or replace into c values (?,?)", (key, json.dumps({"t": text, "s": s})))
         self.db.commit()
         return text
+
+    def purge_empty(self):
+        """Delete cached empty replies (written before empty replies stopped being cached); returns how many."""
+        dead = [k for k, v in self.db.execute("select k, v from c") if not json.loads(v)["t"].strip()]
+        self.db.executemany("delete from c where k=?", [(k,) for k in dead])
+        self.db.commit()
+        return len(dead)
 
 
 def ollama_usage():

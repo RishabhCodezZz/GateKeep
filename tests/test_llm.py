@@ -89,3 +89,31 @@ def test_same_prompt_routed_to_another_backend_is_not_a_cache_hit(tmp_path):
     LLM(db, client=f, backend="ollama").chat(SUPER, "q")
     LLM(db, client=f, backend="ollama", routes={SUPER: "nim"}).chat(SUPER, "q")
     assert f.n == 2
+
+
+class FakeEmpty(Fake):
+    """First reply is empty (a reasoning model that ran out of tokens), later ones are real."""
+    def create(self, **kw):
+        self.n += 1
+        self.last = kw
+        text = "" if self.n == 1 else "real answer"
+        msg = type("M", (), {"content": text})()
+        return type("R", (), {"choices": [type("C", (), {"message": msg})()]})()
+
+
+def test_empty_reply_is_not_cached_so_a_retry_can_succeed(tmp_path):
+    f = FakeEmpty()
+    llm = LLM(str(tmp_path / "c.sqlite"), client=f)
+    assert llm.chat("m", "q") == ""
+    assert llm.empty == 1
+    assert llm.chat("m", "q") == "real answer"  # went back to the API instead of replaying ""
+    assert f.n == 2
+
+
+def test_purge_empty_removes_only_empty_cached_replies(tmp_path):
+    llm = LLM(str(tmp_path / "c.sqlite"), client=Fake())
+    llm.chat("m", "keep me")
+    llm.db.execute("insert into c values ('dead', '{\"t\": \"\", \"s\": 1.0}')")
+    llm.db.commit()
+    assert llm.purge_empty() == 1
+    assert llm.db.execute("select count(*) from c").fetchone()[0] == 1
