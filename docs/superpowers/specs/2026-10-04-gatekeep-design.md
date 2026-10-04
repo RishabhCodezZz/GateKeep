@@ -45,21 +45,22 @@ Multi-agent ablation: flat graph (blind retry) vs Researcher / Writer / Critic s
 ## Models (via Ollama Cloud with the author's API key; NVIDIA NIM is a switchable fallback)
 
 - Gemma 4 31B (`gemma4:31b` on Ollama): answer writer and the baseline LLM judge (a realistic mid-size judge, so the comparison is not a strawman).
-- Nemotron 3 Ultra (`nemotron-3-ultra` on Ollama): one-off labeler for training data and grader of final answers (different family from the writer, so no self-grading).
+- Nemotron 3 Super (`nemotron-3-super` on Ollama): labeler for training data and grader of final answers (different family from the writer, so no self-grading). Chosen over Ultra after measuring quota on 2026-10-04: Ultra cost ~0.00018 of the monthly quota and 8.9 s per call, Super ~0.00004 and 1.9 s, Gemma ~0.00002 and 0.4 s.
+- Nemotron 3 Ultra: only validates Super. About 200 grading calls are repeated with Ultra and the agreement rate is reported.
 - Laya: `convaiinnovations/laya`, typed-decisions checkpoint as the fine-tuning base; one fine-tuned copy per gate on Kaggle 2×T4.
 
 ## Data and splits
 
-- Questions are generated from chunks (Ultra), single-chunk and two-chapter multi-hop; the source chunk is the gold passage. Unanswerable questions target topics absent from the book (guarded by a substring check).
+- Questions are generated from chunks (Super), single-chunk and two-chapter multi-hop; the source chunk is the gold passage. Unanswerable questions target topics absent from the book (guarded by a substring check).
 - **Split by chapter, never randomly** (the book repeats itself): train / dev / test chapters. Unanswerable topics are split the same way.
 - The author hand-writes 50–100 questions (evaluation only; reported separately because they are not chapter-held-out) and hand-checks 50 generated items.
-- G3 training data is synthetic (faithful answer vs one-fact-corrupted answer). Dev/test G3 rows use real Gemma answers labeled by Ultra. Real-hallucination data (RAGTruth) is an optional extension only if G3 underperforms.
+- G3 training data is synthetic (faithful answer vs one-fact-corrupted answer). Dev/test G3 rows use real Gemma answers labeled by Super. Real-hallucination data (RAGTruth) is an optional extension only if G3 underperforms.
 - Dev set picks the cascade threshold per gate; test is touched once per reported number.
 
 ## Evaluation
 
 Per gate: macro-F1, ECE, p50/p95 latency per decision, coverage-vs-accuracy curve; backends LLM / sklearn / Laya zero-shot / Laya fine-tuned. Plus hit@5 for cross-encoder vs Laya-as-reranker.
-End to end (V0–V3, ~300 answerable + ~32 unanswerable test questions, handwritten set separately): correctness and faithfulness (Ultra), LLM calls per question, gate LLM calls, latency, 95% bootstrap CIs. Latency of cached LLM calls replays the original measured latency.
+End to end (V0–V3, ~300 answerable + ~32 unanswerable test questions, handwritten set separately): correctness and faithfulness (Super), LLM calls per question, gate LLM calls, latency, 95% bootstrap CIs. Latency of cached LLM calls replays the original measured latency.
 OOD: rerun V1 and V3 on the scikit-learn corpus with the book-trained gates.
 
 ## Success criteria (fixed before any run)
