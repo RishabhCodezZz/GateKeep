@@ -75,6 +75,66 @@ def purge_empty():
     print("purged", LLM().purge_empty(), "empty cached replies")
 
 
+def load_system():
+    from gatekeep import qa
+    from gatekeep.corpus import Index
+    from gatekeep.llm import LLM
+    return LLM(), Index(load_chunks()), qa
+
+
+def read_rows(path):
+    return [json.loads(line) for line in open(path, encoding="utf-8") if line.strip()]
+
+
+@command
+def variants(names="V0,V1", limit="", tau_file="results/tau.json", agents="0", prefix="", items_file="data/qa_test.jsonl"):
+    """Run end-to-end variants; write results/<prefix>rows_<variant>.jsonl and append to results/summary.csv.
+    prefix keeps side runs apart (e.g. "tau0.9_", "ood_", "hw_"); `report` only reads rows_*.jsonl."""
+    import csv
+    from gatekeep import evalrun
+    llm, index, qa = load_system()
+    items = qa.load(items_file)
+    items = items[:int(limit)] if limit else items
+    laya = None
+    if any(v in names for v in ("V2", "V3")):
+        from gatekeep.gates import LayaGate
+        laya = LayaGate.load(json.load(open("models/ckpts.json")))
+    tau = json.load(open(tau_file)) if Path(tau_file).exists() else 0.8
+    Path("results").mkdir(exist_ok=True)
+    summaries = {}
+    for v in names.split(","):
+        app, llm_gate = evalrun.make_app(v, index, llm, laya, tau, agents=agents == "1")
+        rows = evalrun.run_variant(app, llm_gate, llm, items)
+        suffix = "-agents" if agents == "1" else ""
+        qa.save(rows, f"results/{prefix}rows_{v}{suffix}.jsonl")
+        tag = prefix + v + suffix
+        summaries[tag] = evalrun.summarize(rows)
+        print(tag, {k: round(m[0], 3) for k, m in summaries[tag].items()}, "| empty replies:", llm.empty)
+    with open("results/summary.csv", "a", newline="") as f:
+        w = csv.writer(f)
+        for tag, s in summaries.items():
+            for k, (m, lo, hi) in s.items():
+                w.writerow([tag, k, round(m, 4), round(lo, 4), round(hi, 4)])
+
+
+@command
+def gatedata():
+    """Write data/gates/<gate>_<split>.jsonl (+ .laya.jsonl) for train/dev/test."""
+    from gatekeep import data
+    llm, index, qa = load_system()
+    by_id = {c["id"]: c for c in index.chunks}
+    direct = data.gen_direct(llm, 40)
+    cut = {"train": direct[:28], "dev": direct[28:32], "test": direct[32:]}
+    for split in ("train", "dev", "test"):
+        items = qa.load(f"data/qa_{split}.jsonl")
+        real = split != "train"
+        data.write_gate_data({"route": data.g1_rows(items, cut[split]),
+                              "grade": data.g2_rows(llm, index, items, by_id),
+                              "grounded": data.g3_rows(llm, index, items, by_id, real=real),
+                              "sufficient": data.g4_rows(llm, items)}, split)
+        print(split, "done")
+
+
 # --- new commands go above this line ---
 
 if __name__ == "__main__":
