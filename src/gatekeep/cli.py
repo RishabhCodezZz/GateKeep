@@ -50,8 +50,10 @@ def prepare(pdf):
 
 
 @command
-def questions(n_train="600", n_dev="100", n_test="300"):
-    """Generate data/qa_{train,dev,test}.jsonl from chapter-disjoint chunks, plus data/review.csv for a hand check."""
+def questions(n_train="600", n_dev="100", n_test="300", judge="0"):
+    """Generate data/qa_{train,dev,test}.jsonl from chapter-disjoint chunks, plus data/review.csv for a hand check.
+    judge="1" adds the model self-contained check. Off by default: on the 50 hand marks it removed 4 more bad questions
+    but also 10 of 16 good ones (62%), which would shrink the test set to about 120 questions."""
     from gatekeep import qa
     from gatekeep.llm import LLM
     llm = LLM()
@@ -61,7 +63,7 @@ def questions(n_train="600", n_dev="100", n_test="300"):
     topics = {"train": qa.ABSENT_TOPICS[:6], "dev": qa.ABSENT_TOPICS[6:8], "test": qa.ABSENT_TOPICS[8:]}
     for split, n in (("train", int(n_train)), ("dev", int(n_dev)), ("test", int(n_test))):
         part = qa.chunks_in(chunks, sp[split])
-        items = (qa.gen_single(llm, part, n, llm_check=True) + qa.gen_multi(llm, part, n // 10, llm_check=True)
+        items = (qa.gen_single(llm, part, n, llm_check=judge == "1") + qa.gen_multi(llm, part, n // 10, llm_check=judge == "1")
                  + qa.gen_unanswerable(llm, chunks, topics[split]))
         qa.save(qa.with_ids(items, split), f"data/qa_{split}.jsonl")
         print(split, len(items), "items,", sum(not it["answerable"] for it in items), "unanswerable,",
