@@ -94,3 +94,22 @@ def test_write_gate_data_writes_one_plain_file_per_gate_and_split(tmp_path):
     data.write_gate_data({"grade": [{"text": "t", "label": "yes"}]}, "train", str(tmp_path))
     assert (tmp_path / "grade_train.jsonl").read_text().strip().startswith('{"text"')
     assert [p.name for p in tmp_path.iterdir()] == ["grade_train.jsonl"]
+
+
+class Lines(FakeLLM):
+    """Replies with a messy numbered list, the way a model really answers 'one per line'."""
+    def chat(self, model, prompt, **kw):
+        return '1. Hello!\n2. "Thanks a lot"\n- bye\n\n* \n3) What is 2+2?\n'
+
+
+def test_gen_direct_reads_one_message_per_line_and_cleans_numbering_and_quotes():
+    out = data.gen_direct(Lines(), n=100)
+    assert out == ["Hello!", "Thanks a lot", "bye", "What is 2+2?"]  # de-duplicated across the topic batches, blanks dropped
+
+
+def test_gen_direct_never_returns_more_than_n():
+    class Many(FakeLLM):
+        def chat(self, model, prompt, **kw):
+            return "\n".join(f"message {i}" for i in range(50))
+
+    assert len(data.gen_direct(Many(), n=10)) == 10

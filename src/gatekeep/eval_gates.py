@@ -19,12 +19,29 @@ def evaluate_gate(backend, gate, rows, llm=None):
     conf = [p[1] for p in preds]
     out = {"f1": macro_f1(y, labels), "acc": float(np.mean(ok)), "ece": ece(conf, ok),
            "p50_ms": 1000 * float(np.percentile(secs, 50)), "p95_ms": 1000 * float(np.percentile(secs, 95)),
-           "ok": ok, "conf": conf, "recall_yes": None, "precision_yes": None}
+           "ok": ok, "conf": conf, "recall_yes": None, "precision_yes": None,
+           # accuracy alone hides a gate that always says the majority label, so also report recall per label
+           "per_label_recall": {lab: sum(a == lab and b == lab for a, b in zip(labels, y)) / y.count(lab) for lab in sorted(set(y))}}
     if set(y) <= {"yes", "no"}:  # the three yes/no gates: how many relevant/grounded/sufficient cases does it let through?
         tp = sum(a == "yes" and b == "yes" for a, b in zip(labels, y))
         out["recall_yes"] = tp / max(y.count("yes"), 1)
         out["precision_yes"] = tp / labels.count("yes") if "yes" in labels else None
     return out
+
+
+def save_rows(path, header, rows):
+    """Write result rows to a CSV, replacing earlier rows with the same (gate, backend, split) so reruns do not duplicate."""
+    import csv
+    import os
+    key = lambda r: (r["gate"], r["backend"], r["split"])
+    merged = {}
+    if os.path.exists(path):
+        merged = {key(r): r for r in csv.DictReader(open(path, encoding="utf-8"))}
+    merged.update({key(r): r for r in rows})
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=header, restval="")
+        w.writeheader()
+        w.writerows(merged.values())
 
 
 def dev_acc_from_csv(path, gate, backend):

@@ -7,6 +7,7 @@ Lessons from the first per-gate run (2026-10-05):
 """
 import json
 import random
+import re
 from pathlib import Path
 
 from gatekeep.gates import GATES
@@ -19,10 +20,26 @@ def _yes(text):
     return text.strip().upper().startswith("YES")
 
 
-def gen_direct(llm, n=40):
-    j = parse_json(llm.chat(SUPER, f"Write {n} short messages that need no document lookup: greetings, thanks, "
-                                   "'what is 2+2'-style trivia. JSON only: {\"messages\": [\"...\"]}", max_tokens=3000))
-    return (j or {}).get("messages", [])
+DIRECT_KINDS = ["greetings", "thanks and goodbyes", "small talk about the assistant itself",
+                "trivial arithmetic or unit conversions", "very general questions about the weather or the time",
+                "requests to repeat or rephrase something"]
+_LIST_MARK = re.compile(r"^\s*(\d+[.)]|[-*•])\s*")
+
+
+def gen_direct(llm, n=120):
+    """Chit-chat that needs no lookup. One message per line: the first run asked for JSON, got something unparseable,
+    and silently returned nothing, so the 'direct' class vanished from gate 1."""
+    per = -(-n // len(DIRECT_KINDS))
+    out = []
+    for kind in DIRECT_KINDS:
+        text = llm.chat(SUPER, f"Write {per} different short messages a user might send to an assistant: {kind}. "
+                               "They must not be about machine learning. One message per line, no numbering, no quotes.",
+                        max_tokens=800, temperature=0.7)
+        for line in text.splitlines():
+            m = _LIST_MARK.sub("", line).strip().strip("\"'")
+            if 2 <= len(m) <= 120 and m not in out:
+                out.append(m)
+    return out[:n]
 
 
 def g1_rows(items, direct_texts):

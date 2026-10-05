@@ -61,3 +61,25 @@ def test_dev_acc_from_csv_reads_a_backends_dev_accuracy_for_one_gate(tmp_path):
     p.write_text("\n".join(lines) + "\n")
     assert dev_acc_from_csv(str(p), "grade", "llm") == 0.81
     assert dev_acc_from_csv(str(p), "route", "llm") == 0.88
+
+
+def test_evaluate_gate_reports_recall_for_every_label():
+    rows = [{"text": "a", "label": "x"}, {"text": "b", "label": "x"}, {"text": "c", "label": "y"}]
+
+    class Guess(Gate):
+        def decide_many(self, gate, texts):
+            return [("x", 0.9) if t in ("a", "b") else ("x", 0.6) for t in texts]  # never says y
+
+    assert evaluate_gate(Guess(), "route", rows)["per_label_recall"] == {"x": 1.0, "y": 0.0}
+
+
+def test_save_rows_replaces_rows_with_the_same_key_instead_of_duplicating(tmp_path):
+    from gatekeep.eval_gates import save_rows
+    p = str(tmp_path / "g.csv")
+    header = ["gate", "backend", "split", "acc"]
+    save_rows(p, header, [{"gate": "grade", "backend": "llm", "split": "test", "acc": 0.8},
+                          {"gate": "grade", "backend": "sklearn", "split": "test", "acc": 0.6}])
+    save_rows(p, header, [{"gate": "grade", "backend": "llm", "split": "test", "acc": 0.9}])
+    import csv
+    rows = list(csv.DictReader(open(p)))
+    assert len(rows) == 2 and {r["backend"]: r["acc"] for r in rows} == {"llm": "0.9", "sklearn": "0.6"}
