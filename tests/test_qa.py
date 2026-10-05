@@ -131,3 +131,41 @@ def test_load_handwritten_csv_marks_blank_answers_unanswerable(tmp_path):
     assert [it["id"] for it in items] == ["hw-0", "hw-1"]
     assert items[0]["a"] == "Averages models, cutting variance." and items[0]["answerable"]
     assert items[1]["a"] is None and not items[1]["answerable"] and items[1]["src"] == "hand"
+
+
+PROSE = "Overfitting happens when a model learns the noise in the training set instead of the underlying pattern. " * 3
+CODE = "def play_one_step(env, state, epsilon):\n    q_values = model.predict(state[np.newaxis])\n    next_state, reward, done = env.step(action)\n" * 3
+
+
+def test_code_heavy_separates_code_from_prose():
+    assert qa.code_heavy(CODE)
+    assert not qa.code_heavy(PROSE)
+    # a prose chunk (~900 chars, like the real ones) that mentions one API name is still prose
+    mentions_api = ("The score_samples() method returns the log of the density at each instance. "
+                    + "Instances in low density regions are anomalies, and a threshold can come from a percentile. " * 8)
+    assert not qa.code_heavy(mentions_api)
+
+
+def test_bad_question_flags_code_and_example_references_found_in_the_second_hand_check():
+    for q in ["What is the purpose of the helper defined in the code snippet?",
+              "What is the purpose of the layer defined in the network setup shown?",
+              "What is the purpose of picking images in the described clustering approach?",
+              "Why is this a risk, according to the provided information?",
+              "Why does the training_step() function keep only the maximum?"]:
+        assert qa.bad_question(q), q
+
+
+def test_generators_never_ask_about_code_heavy_chunks():
+    prompts = []
+
+    class Spy(FakeLLM):
+        def chat(self, model, prompt, **kw):
+            prompts.append(prompt)
+            return self.reply
+
+    chunks = [{"id": 0, "text": CODE, "chapter": "A", "section": ""}, {"id": 1, "text": PROSE, "chapter": "B", "section": ""},
+              {"id": 2, "text": PROSE + " more", "chapter": "C", "section": ""}]
+    reply = '{"question": "What is overfitting?", "answer": "Fitting noise."}'
+    qa.gen_single(Spy(reply), chunks, 3)
+    qa.gen_multi(Spy(reply), chunks, 2)
+    assert prompts and not any("play_one_step" in p for p in prompts)

@@ -18,10 +18,19 @@ NUMBER_PROBE = re.compile(r"\b(value of|the (median|mean|average|probability|rew
                           r"the (first|second|third|fourth|fifth) (element|instance|feature|row|item)|in state \S+|"
                           r"action \d|first instance)\b", re.I)
 CODE_VARIABLE = re.compile(r"\b\w+_\w*\s+(array|dataset|variable|attribute|list|matrix|table)\b", re.I)
+# Found in a second hand check (47 answerable questions, 16 still bad); 5 of those 16 matched, 1 of 31 good ones did.
+CODE_REF = re.compile(r"\b(code snippet|snippet|defined in|described|provided (information|passage)|given (information|passage)|"
+                      r"the following|in the code|the code|the function defined|function defined|\w+_\w+\(\)\s+function)\b", re.I)
+SYMBOLS = set("()[]{}=_<>/*#\\")
+CODE_LIMIT = 0.03  # share of symbol characters; bad questions came from chunks at a median 0.026-0.033 vs 0.007-0.011 for good ones
+
+
+def code_heavy(text, limit=CODE_LIMIT):
+    return sum(ch in SYMBOLS for ch in text) / max(len(text), 1) >= limit
 
 
 def bad_question(q):
-    return bool(PASSAGE_REF.search(q) or NUMBER_PROBE.search(q) or CODE_VARIABLE.search(q))
+    return bool(PASSAGE_REF.search(q) or NUMBER_PROBE.search(q) or CODE_VARIABLE.search(q) or CODE_REF.search(q))
 
 
 def self_contained(llm, q, model=SUPER):
@@ -61,8 +70,8 @@ def _usable(llm, j, model, llm_check):
 
 
 def gen_single(llm, chunks, n, seed=0, model=SUPER, llm_check=False):
-    """Walk the chunks in random order until n usable questions exist (or the chunks run out)."""
-    order = list(chunks)
+    """Walk the prose chunks in random order until n usable questions exist (or the chunks run out)."""
+    order = [c for c in chunks if not code_heavy(c["text"])]
     random.Random(seed).shuffle(order)
     out = []
     for c in order:
@@ -77,6 +86,7 @@ def gen_single(llm, chunks, n, seed=0, model=SUPER, llm_check=False):
 
 
 def gen_multi(llm, chunks, n, seed=0, model=SUPER, llm_check=False):
+    chunks = [c for c in chunks if not code_heavy(c["text"])]
     rng, out, tries = random.Random(seed), [], 0
     while len(out) < n and tries < 5 * n + 5 and len(chunks) >= 2:
         tries += 1
