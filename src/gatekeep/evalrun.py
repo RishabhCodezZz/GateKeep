@@ -2,7 +2,7 @@
 import random
 
 from gatekeep.gates import GATES, Cascade, LLMGate
-from gatekeep.graph import REFUSAL, build_graph, evidence
+from gatekeep.graph import REFUSAL, build_graph
 from gatekeep.llm import SUPER, ULTRA
 from gatekeep.metrics import bootstrap_ci
 
@@ -45,7 +45,9 @@ def judge(llm, item, result, model=SUPER):
     if ans == REFUSAL or not docs:
         faithful = None
     else:
-        v = llm.chat(model, f"Passages:\n{evidence(docs)}\n\nAnswer: {ans}\n"
+        # the grader reads every passage the writer saw; the 1,200-char evidence cap is only for Laya's 512-token window
+        passages = "\n\n".join(d["text"] for d in docs)
+        v = llm.chat(model, f"Passages:\n{passages}\n\nAnswer: {ans}\n"
                             "Is every claim in the answer supported by the passages? Reply YES or NO.", max_tokens=8)
         faithful = int(v.strip().upper().startswith("YES"))
     return {"correct": correct, "faithful": faithful}
@@ -70,7 +72,8 @@ def run_variant(app, llm_gate, llm, items):
                "llm_calls": llm.logical_calls - c0, "gate_llm_calls": llm_gate.llm_used - g0,
                "gate_calls": r.get("gate_calls", 0),
                "latency_s": (llm.total_s - s0) + r.get("gate_s", 0.0) + r.get("retr_s", 0.0),
-               "flagged": bool(r.get("flagged"))}
+               "flagged": bool(r.get("flagged")), "route": r.get("route"), "rewrites": r.get("rewrites", 0),
+               "regens": r.get("regens", 0), "kept": len(r.get("docs") or [])}
         rows.append({**row, **judge(llm, it, r)})
     return rows
 

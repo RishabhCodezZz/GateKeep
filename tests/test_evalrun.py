@@ -79,3 +79,27 @@ def test_agreement_is_the_share_of_matching_verdicts():
     items, rows = [ITEM], [{"id": "t-0", "answer": "x"}]
     assert agreement(Split("CORRECT"), items, rows, n=1) == 1.0
     assert agreement(Split("INCORRECT"), items, rows, n=1) == 0.0
+
+
+def test_faithfulness_judge_sees_every_passage_not_a_truncated_prefix():
+    seen = []
+
+    class Spy(FakeLLM):
+        def chat(self, model, prompt, **kw):
+            seen.append(prompt)
+            return "YES"
+
+    docs = [{"text": "a" * 1000}, {"text": "b" * 1000}, {"text": "LATE_PASSAGE_MARKER"}]
+    judge(Spy(), ITEM, {"answer": "an answer", "docs": docs})
+    assert any("LATE_PASSAGE_MARKER" in p for p in seen)  # the 1,200-char cap belongs to Laya's window, not the grader
+
+
+def test_rows_record_why_a_question_was_refused_or_retried():
+    class Routed(StubApp):
+        def invoke(self, s):
+            r = super().invoke(s)
+            return {**r, "route": "retrieve", "rewrites": 1, "regens": 2}
+
+    llm = FakeLLM("CORRECT")
+    row = run_variant(Routed(llm), LLMGate(llm), llm, [ITEM])[0]
+    assert (row["route"], row["rewrites"], row["regens"], row["kept"]) == ("retrieve", 1, 2, 1)
