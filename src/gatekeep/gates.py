@@ -1,5 +1,5 @@
 """The four gates and the interchangeable backends that answer them."""
-import re, time
+import os, re, time
 
 from gatekeep.llm import GEMMA
 
@@ -80,7 +80,11 @@ class LayaGate(Gate):
 
     @classmethod
     def load(cls, ckpts):
-        """ckpts = {gate: (checkpoint_dir_or_hf_id, calibration_json_path_or_None)}"""
+        """ckpts = {gate: (checkpoint_dir, calibration_json_path_or_None)}"""
+        for gate, (ck, _) in ckpts.items():
+            if not os.path.isdir(ck):  # laya.load would take a missing folder for a Hugging Face repo and fail with a 401
+                raise FileNotFoundError(f"fine-tuned model folder '{ck}' for gate '{gate}' is missing: attach notebook 04's "
+                                        "OUTPUT as an input (it must have been saved with Save & Run All), or re-run notebook 04")
         import laya
         agents = {}
         for gate, (ck, cal) in ckpts.items():

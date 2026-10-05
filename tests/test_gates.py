@@ -53,3 +53,10 @@ def test_sk_gate_learns_a_trivial_rule():
     sk.fit("grade", texts, ["yes", "yes", "no", "no"] * 3)
     (l1, p1), (l2, _) = sk.decide_many("grade", ["great good", "awful bad"])
     assert (l1, l2) == ("yes", "no") and p1 > 0.5
+
+
+def test_laya_gate_load_names_the_missing_folder_instead_of_asking_the_hub(tmp_path):
+    import pytest
+    from gatekeep.gates import LayaGate
+    with pytest.raises(FileNotFoundError, match="notebook 04"):
+        LayaGate.load({"route": (str(tmp_path / "models" / "route"), None)})

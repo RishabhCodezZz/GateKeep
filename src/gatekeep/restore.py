@@ -16,9 +16,11 @@ def restore(input_dir="/kaggle/input", dest="."):
         for part in PARTS:
             if os.path.isdir(os.path.join(src, part)):
                 shutil.copytree(os.path.join(src, part), os.path.join(dest, part), dirs_exist_ok=True)
-        # the fine-tuned models (GBs) usually live only in a notebook's output, not in the fullest backup
-        if not os.path.exists(os.path.join(src, "models", "ckpts.json")):
-            holders = [os.path.dirname(os.path.dirname(p)) for p in glob.glob(f"{input_dir}/**/models/ckpts.json", recursive=True)]
+        # The fine-tuned weights (GBs) usually live only in a notebook's output. The small backup carries models/ckpts.json
+        # WITHOUT the weights, so look for the weights themselves, not for that file.
+        if not glob.glob(os.path.join(src, "models", "*", "model.safetensors")):
+            holders = [os.path.dirname(os.path.dirname(os.path.dirname(p)))
+                       for p in glob.glob(f"{input_dir}/**/models/*/model.safetensors", recursive=True)]
             if holders:
                 shutil.copytree(os.path.join(holders[0], "models"), os.path.join(dest, "models"), dirs_exist_ok=True)
         return f"folders in {src}"

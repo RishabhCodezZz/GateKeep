@@ -47,14 +47,18 @@ def test_returns_none_when_there_is_no_backup(tmp_path):
     assert restore(str(tmp_path / "input"), str(tmp_path / "work")) is None
 
 
-def test_models_are_found_even_when_they_live_in_a_different_attached_folder(tmp_path):
+def test_weights_are_found_even_when_the_fullest_backup_only_has_the_small_ckpts_file(tmp_path):
     import shutil
-    make_extracted(tmp_path / "input", "dataset_backup", 500)           # fullest cache, but no fine-tuned models
+    make_extracted(tmp_path / "input", "dataset_backup", 500)            # fullest cache; its models/ holds only ckpts.json
     shutil.rmtree(tmp_path / "input" / "dataset_backup" / "models")
-    make_extracted(tmp_path / "input", "notebook_output", 100)          # smaller cache, but it holds the models
-    (tmp_path / "input" / "notebook_output" / "models" / "ckpts.json").write_text("{}")
+    (tmp_path / "input" / "dataset_backup" / "models").mkdir()
+    (tmp_path / "input" / "dataset_backup" / "models" / "ckpts.json").write_text("{}")
+    make_extracted(tmp_path / "input", "notebook_output", 100)           # smaller cache, but it holds the real weights
+    shutil.rmtree(tmp_path / "input" / "notebook_output" / "models")
+    (tmp_path / "input" / "notebook_output" / "models" / "route").mkdir(parents=True)
+    (tmp_path / "input" / "notebook_output" / "models" / "route" / "model.safetensors").write_bytes(b"w" * 9)
     dest = tmp_path / "work"
     dest.mkdir()
     restore(str(tmp_path / "input"), str(dest))
-    assert (dest / "cache" / "llm.sqlite").stat().st_size == 500        # cache from the fullest backup
-    assert (dest / "models" / "ckpts.json").exists()                    # models from the folder that has them
+    assert (dest / "cache" / "llm.sqlite").stat().st_size == 500                         # cache from the fullest backup
+    assert (dest / "models" / "route" / "model.safetensors").stat().st_size == 9         # weights from the folder that has them
