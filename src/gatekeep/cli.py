@@ -168,6 +168,19 @@ def check_filter(review="review.csv"):
               f"good questions lost: {table[(stage, 'y', 'rejected')]}/{len(rows) - n_bad}")
 
 
+@command
+def breakdown():
+    """Print, for every results/rows_*.jsonl, how each variant does on answerable vs unanswerable questions and why it refuses."""
+    from gatekeep import report
+    for path in sorted(Path("results").glob("rows_*.jsonl")):
+        b = report.breakdown(read_rows(path))
+        pct = lambda x: "n/a" if x is None else f"{x:.1%}"
+        print(f"{path.stem.removeprefix('rows_')}: {b['n']} questions ({b['answerable']} answerable, {b['unanswerable']} unanswerable)")
+        print(f"   correct: answerable {pct(b['correct_answerable'])} | unanswerable {pct(b['correct_unanswerable'])}")
+        print(f"   refused {b['refused_answerable']} answerable questions: {b['refused_by_router']} by the router, "
+              f"{b['refused_after_grading']} after no passage survived grading | correct when it did answer: {pct(b['correct_when_answered'])}")
+
+
 # --- new commands go above this line ---
 
 if __name__ == "__main__":
