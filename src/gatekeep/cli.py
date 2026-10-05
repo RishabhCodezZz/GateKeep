@@ -131,11 +131,13 @@ def gatedata():
     for split in ("train", "dev", "test"):
         items = qa.load(f"data/qa_{split}.jsonl")
         real = split != "train"
-        data.write_gate_data({"route": data.g1_rows(items, cut[split]),
-                              "grade": data.g2_rows(llm, index, items, by_id),
-                              "grounded": data.g3_rows(llm, index, items, by_id, real=real),
-                              "sufficient": data.g4_rows(llm, items)}, split)
-        print(split, "done")
+        rows_by_gate = {"route": data.g1_rows(items, cut[split]),
+                        "grade": data.g2_rows(llm, index, items, by_id),
+                        "grounded": data.g3_rows(llm, index, items, by_id, real=real),
+                        "sufficient": data.g4_rows(llm, items)}
+        data.write_gate_data(rows_by_gate, split)
+        for gate, rows in rows_by_gate.items():
+            print(f"{split:5s} {gate:10s} {len(rows):5d} rows", dict(Counter(r["label"] for r in rows)))
 
 
 @command
@@ -179,6 +181,64 @@ def breakdown():
         print(f"   correct: answerable {pct(b['correct_answerable'])} | unanswerable {pct(b['correct_unanswerable'])}")
         print(f"   refused {b['refused_answerable']} answerable questions: {b['refused_by_router']} by the router, "
               f"{b['refused_after_grading']} after no passage survived grading | correct when it did answer: {pct(b['correct_when_answered'])}")
+
+
+@command
+def evalgates(backends="llm,sklearn"):
+    """Evaluate backends on each gate (dev and test) and append to results/gates.csv; also writes results/retrieval.json.
+    backends: any of llm, sklearn, laya-zero, laya-ft. With laya-ft and llm it also picks the cascade thresholds on dev."""
+    import csv
+    from gatekeep import eval_gates as eg
+    from gatekeep.gates import GATES, LayaGate, LLMGate, SkGate
+    from gatekeep.metrics import pick_tau
+    llm, index, qa = load_system()
+    wanted = backends.split(",")
+    zero = tuned = None
+    if "laya-zero" in wanted:
+        import laya
+        base = laya.load("convaiinnovations/laya", subfolder="typed-decisions")
+        zero = LayaGate({g: base for g in GATES})  # the untouched base model
+    if "laya-ft" in wanted:
+        tuned = LayaGate.load(json.load(open("models/ckpts.json")))
+    Path("results").mkdir(exist_ok=True)
+    fresh = not Path("results/gates.csv").exists()
+    out = csv.writer(open("results/gates.csv", "a", newline=""))
+    if fresh:
+        out.writerow(["gate", "backend", "split", "n", "f1", "acc", "ece", "p50_ms", "p95_ms", "recall_yes", "precision_yes"])
+    sk, taus = SkGate(), {}
+    for gate in GATES:
+        tr, dev, te = (read_rows(f"data/gates/{gate}_{s}.jsonl") for s in ("train", "dev", "test"))
+        pool = {}
+        if "llm" in wanted:
+            pool["llm"] = LLMGate(llm)
+        if "sklearn" in wanted:
+            pool["sklearn"] = sk.fit(gate, [r["text"] for r in tr], [r["label"] for r in tr])
+        if zero:
+            pool["laya-zero"] = zero
+        if tuned:
+            pool["laya-ft"] = tuned
+        res = {}
+        for name, b in pool.items():
+            for split, rows in (("dev", dev), ("test", te)):
+                r = res[(name, split)] = eg.evaluate_gate(b, gate, rows, llm)
+                cell = lambda k: "" if r[k] is None else round(r[k], 4)
+                out.writerow([gate, name, split, len(rows)] + [cell(k) for k in ("f1", "acc", "ece", "p50_ms", "p95_ms", "recall_yes", "precision_yes")])
+            r = res[(name, "test")]
+            ty = "n/a" if r["recall_yes"] is None else round(r["recall_yes"], 3)
+            print(f"{gate:10s} {name:10s} test: acc {r['acc']:.3f} | f1 {r['f1']:.3f} | ece {r['ece']:.3f} | "
+                  f"let-through (recall of yes) {ty} | p50 {r['p50_ms']:.1f} ms")
+        if tuned and "llm" in wanted:  # cascade threshold: smallest tau where Laya's accepted dev decisions match the LLM judge's dev accuracy
+            taus[gate] = pick_tau(res[("laya-ft", "dev")]["conf"], res[("laya-ft", "dev")]["ok"], target=res[("llm", "dev")]["acc"])
+            print(gate, "tau =", taus[gate])
+    if taus:
+        json.dump(taus, open("results/tau.json", "w"))
+    retrieval = {s: eg.retrieval_recall(index, qa.load(f"data/qa_{s}.jsonl")) for s in ("dev", "test")}
+    json.dump(retrieval, open("results/retrieval.json", "w"))
+    print("retrieval (is the gold passage found / kept?):", retrieval)
+    if tuned:
+        rerank = eg.hit_at_k(index, tuned, qa.load("data/qa_test.jsonl"))
+        json.dump(rerank, open("results/rerank.json", "w"))
+        print("rerank hit@5 (cross-encoder vs laya):", rerank)
 
 
 # --- new commands go above this line ---
