@@ -1,4 +1,4 @@
-from gatekeep.eval_gates import evaluate_gate, hit_at_k, retrieval_recall
+from gatekeep.eval_gates import dev_acc_from_csv, evaluate_gate, hit_at_k, retrieval_recall
 from gatekeep.gates import Gate
 
 
@@ -50,3 +50,14 @@ def test_retrieval_recall_separates_search_misses_from_rerank_misses():
              {"q": "q", "gold": [], "answerable": False}]
     r = retrieval_recall(Idx(), items)
     assert r == {"n": 3, "in_search_top20": 2 / 3, "in_rerank_top5": 1 / 3}
+
+
+def test_dev_acc_from_csv_reads_a_backends_dev_accuracy_for_one_gate(tmp_path):
+    p = tmp_path / "gates.csv"
+    lines = ["gate,backend,split,n,f1,acc,ece,p50_ms,p95_ms,recall_yes,precision_yes",
+             "grade,llm,dev,340,0.8,0.81,0.1,400,900,0.7,0.8",
+             "grade,llm,test,963,0.8,0.83,0.1,400,900,0.7,0.8",
+             "route,llm,dev,130,0.5,0.88,0.1,400,900,,"]
+    p.write_text("\n".join(lines) + "\n")
+    assert dev_acc_from_csv(str(p), "grade", "llm") == 0.81
+    assert dev_acc_from_csv(str(p), "route", "llm") == 0.88

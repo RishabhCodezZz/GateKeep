@@ -77,10 +77,27 @@ def g4_rows(llm, items, by_id, seed=0):
     return rows
 
 
-def laya_row(gate, text, label):
-    # ponytail: the README does not show how noul answers are encoded; confirm against the official notebook (plan Task 8 step 6)
-    ans = {"choice": label} if GATES[gate]["q"]["type"] == "choice" else {"noul": label == "yes"}
-    return {"state": {"body": text}, "questions": {gate: GATES[gate]["q"]}, "answers": {gate: ans}}
+def gold_for(gate, label):
+    """The training target Laya's official fine-tuning notebook reads: a probability per option
+    ("true"/"false" for yes/no gates, one entry per criterion for the route gate)."""
+    q = GATES[gate]["q"]
+    if q["type"] == "noul":
+        return {"probabilities": {"true": float(label == "yes"), "false": float(label != "yes")}}
+    return {"probabilities": {k: float(k == label) for k in q["criteria"]}}
+
+
+def balance_rows(rows, min_share=0.25):
+    """Repeat the rarer labels until each has at least min_share of the most common label's count (training rows only)."""
+    by_label = {}
+    for r in rows:
+        by_label.setdefault(r["label"], []).append(r)
+    top = max(len(v) for v in by_label.values())
+    want = round(top * min_share)
+    out = list(rows)
+    for v in by_label.values():
+        if len(v) < want:
+            out += [v[i % len(v)] for i in range(want - len(v))]
+    return out
 
 
 def write_gate_data(rows_by_gate, split, outdir="data/gates"):
@@ -88,5 +105,3 @@ def write_gate_data(rows_by_gate, split, outdir="data/gates"):
     for gate, rows in rows_by_gate.items():
         with open(f"{outdir}/{gate}_{split}.jsonl", "w", encoding="utf-8") as f:
             f.writelines(json.dumps(r) + "\n" for r in rows)
-        with open(f"{outdir}/{gate}_{split}.laya.jsonl", "w", encoding="utf-8") as f:
-            f.writelines(json.dumps(laya_row(gate, r["text"], r["label"])) + "\n" for r in rows)

@@ -5,7 +5,7 @@ from gatekeep.restore import restore
 
 def make_extracted(root, name, cache_bytes):
     """How Kaggle shows an uploaded zip: it unpacks it into a folder."""
-    for sub, fname, size in (("cache", "llm.sqlite", cache_bytes), ("data", "chunks.json", 5), ("results", "rows_V0.jsonl", 3)):
+    for sub, fname, size in (("cache", "llm.sqlite", cache_bytes), ("data", "chunks.json", 5), ("results", "rows_V0.jsonl", 3), ("models", "gate.bin", 7)):
         d = root / name / sub
         d.mkdir(parents=True)
         (d / fname).write_bytes(b"x" * size)
@@ -18,6 +18,7 @@ def test_restores_from_the_folders_kaggle_makes_when_it_unpacks_the_zip(tmp_path
     where = restore(str(tmp_path / "input"), str(dest))
     assert where and (dest / "cache" / "llm.sqlite").stat().st_size == 10
     assert (dest / "data" / "chunks.json").exists() and (dest / "results" / "rows_V0.jsonl").exists()
+    assert (dest / "models" / "gate.bin").exists()  # fine-tuned gates come back too
 
 
 def test_picks_the_fullest_backup_when_several_are_attached(tmp_path):

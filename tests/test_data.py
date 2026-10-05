@@ -18,12 +18,22 @@ class FakeLLM:
         return "YES" if "Reply YES or NO" in prompt else "an altered answer"
 
 
-def test_laya_row_encodes_choice_and_noul():
-    c = data.laya_row("route", "hi", "direct")
-    assert c["answers"]["route"] == {"choice": "direct"} and c["state"] == {"body": "hi"}
-    n = data.laya_row("grade", "t", "no")
-    assert n["answers"]["grade"] == {"noul": False}
-    assert n["questions"]["grade"]["type"] == "noul"
+def test_gold_for_encodes_the_probabilities_laya_trains_on():
+    assert data.gold_for("grade", "yes") == {"probabilities": {"true": 1.0, "false": 0.0}}
+    assert data.gold_for("grade", "no") == {"probabilities": {"true": 0.0, "false": 1.0}}
+    assert data.gold_for("route", "direct") == {"probabilities": {"retrieve": 0.0, "direct": 1.0, "out_of_scope": 0.0}}
+
+
+def test_balance_rows_repeats_minority_classes_up_to_a_share_of_the_majority():
+    from collections import Counter
+    rows = [{"text": str(i), "label": "a"} for i in range(100)] + [{"text": "x", "label": "b"}] * 7
+    counts = Counter(r["label"] for r in data.balance_rows(rows, min_share=0.25))
+    assert counts["a"] == 100 and counts["b"] == 25
+
+
+def test_balance_rows_leaves_a_balanced_set_alone():
+    rows = [{"text": "1", "label": "a"}, {"text": "2", "label": "b"}]
+    assert data.balance_rows(rows) == rows
 
 
 def test_g1_labels_by_answerability():
@@ -80,7 +90,7 @@ def test_g4_skips_questions_with_no_partner_and_unanswerable_ones():
     assert data.g4_rows(Answerer(), ITEMS, BY_ID) == []  # only one answerable item: nothing to pair it with
 
 
-def test_write_gate_data_writes_plain_and_laya_files(tmp_path):
+def test_write_gate_data_writes_one_plain_file_per_gate_and_split(tmp_path):
     data.write_gate_data({"grade": [{"text": "t", "label": "yes"}]}, "train", str(tmp_path))
     assert (tmp_path / "grade_train.jsonl").read_text().strip().startswith('{"text"')
-    assert '"noul": true' in (tmp_path / "grade_train.laya.jsonl").read_text()
+    assert [p.name for p in tmp_path.iterdir()] == ["grade_train.jsonl"]

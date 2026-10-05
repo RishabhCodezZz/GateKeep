@@ -5,7 +5,7 @@ file or as <something>/cache/llm.sqlite next to <something>/data. Both are handl
 """
 import glob, os, shutil, zipfile
 
-PARTS = ("data", "cache", "results")
+PARTS = ("data", "cache", "results", "models")
 
 
 def restore(input_dir="/kaggle/input", dest="."):

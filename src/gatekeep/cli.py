@@ -130,7 +130,8 @@ def gatedata():
     cut = {"train": direct[:80], "dev": direct[80:90], "test": direct[90:]}
     for split in ("train", "dev", "test"):
         items = qa.load(f"data/qa_{split}.jsonl")
-        rows_by_gate = {"route": data.g1_rows(items, cut[split]),
+        route = data.g1_rows(items, cut[split])
+        rows_by_gate = {"route": data.balance_rows(route) if split == "train" else route,  # rare classes repeated, training only
                         "grade": data.g2_rows(llm, index, items, by_id),
                         # real Gemma answers for every split; training gets a second, warmer answer per question
                         "grounded": data.g3_rows(llm, index, items, by_id, temps=(0.0, 0.7) if split == "train" else (0.0,)),
@@ -227,8 +228,9 @@ def evalgates(backends="llm,sklearn"):
             ty = "n/a" if r["recall_yes"] is None else round(r["recall_yes"], 3)
             print(f"{gate:10s} {name:10s} test: acc {r['acc']:.3f} | f1 {r['f1']:.3f} | ece {r['ece']:.3f} | "
                   f"let-through (recall of yes) {ty} | p50 {r['p50_ms']:.1f} ms")
-        if tuned and "llm" in wanted:  # cascade threshold: smallest tau where Laya's accepted dev decisions match the LLM judge's dev accuracy
-            taus[gate] = pick_tau(res[("laya-ft", "dev")]["conf"], res[("laya-ft", "dev")]["ok"], target=res[("llm", "dev")]["acc"])
+        if tuned:  # cascade threshold: smallest tau where Laya's accepted dev decisions match the LLM judge's dev accuracy
+            target = res[("llm", "dev")]["acc"] if "llm" in wanted else eg.dev_acc_from_csv("results/gates.csv", gate, "llm")
+            taus[gate] = pick_tau(res[("laya-ft", "dev")]["conf"], res[("laya-ft", "dev")]["ok"], target=target)
             print(gate, "tau =", taus[gate])
     if taus:
         json.dump(taus, open("results/tau.json", "w"))

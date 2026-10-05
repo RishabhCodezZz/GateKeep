@@ -27,6 +27,15 @@ def evaluate_gate(backend, gate, rows, llm=None):
     return out
 
 
+def dev_acc_from_csv(path, gate, backend):
+    """A backend's dev accuracy for one gate, from an earlier evalgates run (so the LLM need not be re-run)."""
+    import csv
+    for r in csv.DictReader(open(path, encoding="utf-8")):
+        if (r["gate"], r["backend"], r["split"]) == (gate, backend, "dev"):
+            return float(r["acc"])
+    raise KeyError((gate, backend))
+
+
 def retrieval_recall(index, items):
     """How often the gold chunk is found by the search (top 20), and how often it survives the reranker (top 5).
     A gate cannot fix a passage that was never retrieved, so this separates retrieval misses from gate mistakes."""
