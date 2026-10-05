@@ -1,5 +1,12 @@
-"""Training/eval rows for the four gates. Labels come from the book's own structure or from Super."""
+"""Training/eval rows for the four gates. Labels come from the book's own structure or from Super.
+
+Lessons from the first per-gate run (2026-10-05):
+- Gate 4 rows whose "no" side was Super's evasive text were solvable at 98% by word counting alone (a style giveaway),
+  so both sides are now Gemma-written and the "no" is Gemma's answer to a different question.
+- Gate 3 is trained on the same kind of rows it is tested on: real Gemma answers, labeled by Super.
+"""
 import json
+import random
 from pathlib import Path
 
 from gatekeep.gates import GATES
@@ -14,7 +21,7 @@ def _yes(text):
 
 def gen_direct(llm, n=40):
     j = parse_json(llm.chat(SUPER, f"Write {n} short messages that need no document lookup: greetings, thanks, "
-                                   "'what is 2+2'-style trivia. JSON only: {\"messages\": [\"...\"]}", max_tokens=1500))
+                                   "'what is 2+2'-style trivia. JSON only: {\"messages\": [\"...\"]}", max_tokens=3000))
     return (j or {}).get("messages", [])
 
 
@@ -37,36 +44,36 @@ def g2_rows(llm, index, items, by_id, negs=2):
     return rows
 
 
-def g3_rows(llm, index, items, by_id, real=False):
-    """real=False: faithful answer vs one-fact-corrupted answer (training). real=True: Gemma's answer from
-    retrieved chunks, labeled by Super (dev/test)."""
+def g3_rows(llm, index, items, by_id, temps=(0.0,)):
+    """Gemma answers from the passages the system really retrieves; Super says whether every claim is supported.
+    More than one temperature gives more (different) answers per question."""
     rows = []
     for it in items:
         if not it["answerable"]:
             continue
-        docs = index.rerank(it["q"], index.search(it["q"], 20), 5) if real else [by_id[c] for c in it["gold"]]
-        good = llm.chat(GEMMA, gen_prompt(it["q"], docs, ""), max_tokens=300)
-        ev = f"Passages:\n{evidence(docs)}\n\nAnswer: "
-        if real:
-            v = llm.chat(SUPER, f"{ev}{good}\nIs every claim in the answer supported by the passages? Reply YES or NO.",
+        docs = index.rerank(it["q"], index.search(it["q"], 20), 5)
+        for t in temps:
+            answer = llm.chat(GEMMA, gen_prompt(it["q"], docs, ""), max_tokens=300, temperature=t)
+            ev = f"Passages:\n{evidence(docs)}\n\nAnswer: "
+            v = llm.chat(SUPER, f"{ev}{answer}\nIs every claim in the answer supported by the passages? Reply YES or NO.",
                          max_tokens=8)
-            rows.append({"text": ev + good, "label": "yes" if _yes(v) else "no"})
-        else:
-            bad = llm.chat(SUPER, "Rewrite this answer so that exactly one factual claim is wrong (change a number, "
-                                  "term or relation). Keep the style. Reply with the answer only.\n\n" + good, max_tokens=300)
-            rows += [{"text": ev + good, "label": "yes"}, {"text": ev + bad, "label": "no"}]
+            rows.append({"text": ev + answer, "label": "yes" if _yes(v) else "no"})
     return rows
 
 
-def g4_rows(llm, items):
-    rows = []
-    for it in items:
-        if not it["answerable"]:
+def g4_rows(llm, items, by_id, seed=0):
+    """'yes': Gemma's answer to the question. 'no': Gemma's answer to a different question from the same chapter.
+    Both sides are written the same way, so only meaning can tell them apart."""
+    ok = [it for it in items if it["answerable"]]
+    answers = {it["id"]: llm.chat(GEMMA, gen_prompt(it["q"], [by_id[c] for c in it["gold"]], ""), max_tokens=300) for it in ok}
+    rng, rows = random.Random(seed), []
+    for it in ok:
+        others = [o for o in ok if o["id"] != it["id"] and o["chapter"] == it["chapter"]] or [o for o in ok if o["id"] != it["id"]]
+        if not others:
             continue
-        evasive = llm.chat(SUPER, "Write a plausible answer that discusses the same topic but does NOT actually "
-                                  f"answer this question. Reply with the answer only.\n\nQuestion: {it['q']}", max_tokens=200)
-        rows += [{"text": f"Question: {it['q']}\nAnswer: {it['a']}", "label": "yes"},
-                 {"text": f"Question: {it['q']}\nAnswer: {evasive}", "label": "no"}]
+        other = rng.choice(others)
+        rows += [{"text": f"Question: {it['q']}\nAnswer: {answers[it['id']]}", "label": "yes"},
+                 {"text": f"Question: {it['q']}\nAnswer: {answers[other['id']]}", "label": "no"}]
     return rows
 
 

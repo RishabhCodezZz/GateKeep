@@ -126,15 +126,15 @@ def gatedata():
     from gatekeep import data
     llm, index, qa = load_system()
     by_id = {c["id"]: c for c in index.chunks}
-    direct = data.gen_direct(llm, 40)
-    cut = {"train": direct[:28], "dev": direct[28:32], "test": direct[32:]}
+    direct = data.gen_direct(llm, 120)  # chit-chat that needs no lookup; the first run had only 28 train / 9 test examples
+    cut = {"train": direct[:80], "dev": direct[80:90], "test": direct[90:]}
     for split in ("train", "dev", "test"):
         items = qa.load(f"data/qa_{split}.jsonl")
-        real = split != "train"
         rows_by_gate = {"route": data.g1_rows(items, cut[split]),
                         "grade": data.g2_rows(llm, index, items, by_id),
-                        "grounded": data.g3_rows(llm, index, items, by_id, real=real),
-                        "sufficient": data.g4_rows(llm, items)}
+                        # real Gemma answers for every split; training gets a second, warmer answer per question
+                        "grounded": data.g3_rows(llm, index, items, by_id, temps=(0.0, 0.7) if split == "train" else (0.0,)),
+                        "sufficient": data.g4_rows(llm, items, by_id)}
         data.write_gate_data(rows_by_gate, split)
         for gate, rows in rows_by_gate.items():
             print(f"{split:5s} {gate:10s} {len(rows):5d} rows", dict(Counter(r["label"] for r in rows)))
