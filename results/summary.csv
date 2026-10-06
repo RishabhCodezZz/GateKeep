@@ -43,3 +43,13 @@ tau0.95_V3,faithful,0.7877,0.7432,0.8322
 tau0.95_V3,llm_calls,6.0816,5.7579,6.4402
 tau0.95_V3,gate_llm_calls,4.7493,4.4896,5.0466
 tau0.95_V3,latency_s,3.5627,3.2807,3.8779
+V1-agents,correct,0.9038,0.8688,0.9329
+V1-agents,faithful,0.793,0.7404,0.8386
+V1-agents,llm_calls,10.7376,10.3585,11.1604
+V1-agents,gate_llm_calls,9.3965,9.0758,9.7609
+V1-agents,latency_s,6.0278,5.2062,7.2517
+V3-agents,correct,0.9184,0.8892,0.9475
+V3-agents,faithful,0.7952,0.7474,0.8396
+V3-agents,llm_calls,3.3557,3.1254,3.5977
+V3-agents,gate_llm_calls,2.0029,1.8105,2.2014
+V3-agents,latency_s,2.1547,1.926,2.4223
