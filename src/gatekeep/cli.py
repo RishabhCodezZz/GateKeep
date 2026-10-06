@@ -244,6 +244,37 @@ def evalgates(backends="llm,sklearn"):
         print("rerank hit@5 (cross-encoder vs laya):", rerank)
 
 
+@command
+def report():
+    """Read results/rows_*.jsonl, print the verdict, write the two plots."""
+    from gatekeep import evalrun, report as rp
+    from gatekeep.eval_gates import evaluate_gate
+    from gatekeep.gates import GATES, LayaGate
+    from gatekeep.metrics import coverage_curve
+    rows = {p.stem.removeprefix("rows_"): read_rows(p) for p in Path("results").glob("rows_*.jsonl")}  # prefixed side runs are excluded
+    sums = {k: evalrun.summarize(v) for k, v in rows.items()}
+    for k, s in sorted(sums.items()):
+        print(k, {m: round(v[0], 3) for m, v in s.items()})
+    print("verdict V1 vs V3:", rp.verdict(sums["V1"], sums["V3"]))
+    rp.plot_tradeoff({k: (s["llm_calls"][0], s["correct"][0]) for k, s in sums.items()}, "results/tradeoff.png")
+    tuned = LayaGate.load(json.load(open("models/ckpts.json")))
+    taus = [round(0.5 + 0.05 * i, 2) for i in range(10)]
+    curves = {}
+    for g in GATES:
+        r = evaluate_gate(tuned, g, read_rows(f"data/gates/{g}_test.jsonl"))
+        curves[g] = coverage_curve(r["conf"], r["ok"], taus)
+    rp.plot_coverage(curves, "results/coverage.png")
+
+
+@command
+def validate_grader(n="200"):
+    """Share of correctness verdicts where Super (our grader) and Ultra agree, on the V1 answers."""
+    from gatekeep import evalrun, qa
+    from gatekeep.llm import LLM
+    items, rows = qa.load("data/qa_test.jsonl"), read_rows("results/rows_V1.jsonl")
+    print("Super-vs-Ultra agreement:", evalrun.agreement(LLM(), items, rows, int(n)))
+
+
 # --- new commands go above this line ---
 
 if __name__ == "__main__":

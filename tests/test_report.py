@@ -1,5 +1,5 @@
 from gatekeep.graph import REFUSAL
-from gatekeep.report import breakdown
+from gatekeep.report import breakdown, plot_coverage, plot_tradeoff, verdict
 
 
 def row(answerable, answer="an answer", correct=1, route="retrieve", kept=3):
@@ -22,3 +22,23 @@ def test_breakdown_separates_answerable_unanswerable_and_refusals():
 def test_breakdown_handles_a_variant_with_no_refusals():
     b = breakdown([row(True), row(True)])
     assert b["refused_answerable"] == 0 and b["correct_when_answered"] == 1.0 and b["correct_unanswerable"] is None
+
+
+def s(correct, gate_calls):
+    return {"correct": (correct, 0, 0), "gate_llm_calls": (gate_calls, 0, 0)}
+
+
+def test_verdict_passes_when_close_and_cheaper():
+    v = verdict(s(0.80, 10.0), s(0.78, 1.5))
+    assert v["pass"] and abs(v["quality_gap"] - 0.02) < 1e-9 and round(v["call_ratio"], 2) == 6.67
+
+
+def test_verdict_fails_on_quality_or_cost():
+    assert not verdict(s(0.80, 10.0), s(0.70, 1.0))["pass"]
+    assert not verdict(s(0.80, 10.0), s(0.80, 5.0))["pass"]
+
+
+def test_plots_are_written(tmp_path):
+    plot_tradeoff({"V1": (8.0, 0.8), "V3": (3.0, 0.78)}, str(tmp_path / "t.png"))
+    plot_coverage({"route": [(0.5, 1.0, 0.8), (0.9, 0.5, 0.95)]}, str(tmp_path / "c.png"))
+    assert (tmp_path / "t.png").stat().st_size > 0 and (tmp_path / "c.png").stat().st_size > 0
