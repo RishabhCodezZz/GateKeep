@@ -1,0 +1,9 @@
+# Laptop tests: versions verified on Windows with Python 3.12.
+# Model downloads and cloud API keys are not needed for this test set.
+openai==3.24.0
+langgraph==1.2.12
+scikit-learn==1.9.1
+numpy==2.5.3
+matplotlib==3.11.2
+pymupdf==1.28.2
+pytest==9.1.1
