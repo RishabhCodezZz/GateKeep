@@ -1,6 +1,6 @@
 # GateKeep: measured agentic RAG — Design
 
-Date: 2026-10-04 · Status: approved in chat by the author (Rishabh) · Mode: ponytail (lean)
+Date: 2026-10-04 · Historical design document. The code, `results/` and the README are the source of truth where they differ.
 
 ## Question
 
@@ -8,7 +8,7 @@ In an agentic RAG graph, an LLM is normally called for every small judgment ("is
 
 ## Non-goals
 
-- No Jev (waitlist, closed API). No live hosting (public repo + README plots + 90 s screen recording + public Kaggle notebook).
+- No Jev (waitlist, closed API). No live hosting (public repo + README plots + 90 s screen recording).
 - No claim of novelty: Adaptive-RAG and Corrective RAG already use small classifiers as gates, and Laya already ships a `LayaRouter` for LangGraph. The contribution is the measurement on a two-week-old model.
 - Laya is not used as a retriever or primary reranker; a cross-encoder does that. Laya-as-reranker is a small ablation only.
 
@@ -16,7 +16,7 @@ In an agentic RAG graph, an LLM is normally called for every small judgment ("is
 
 Primary: Géron, *Hands-On ML with Scikit-Learn, Keras & TensorFlow* (2nd ed.). Parsed once with **Docling**, chunked with Docling's HybridChunker (tokenizer = bge-small, `max_tokens=300`, because Laya reads ~512 tokens and G2 input is question + chunk). Each chunk keeps `section` (Docling heading path) and `page`; its `chapter` comes from the PDF bookmarks by page (Docling's headings are a flat list of section titles, not chapters).
 The book is copyrighted: it and everything derived from it stay in **private** storage (git-ignored `data/`, `cache/`; private HF dataset repo for persistence between Kaggle sessions). The public repo ships code and aggregate results only.
-Out-of-distribution corpus and public-demo corpus: the scikit-learn user guide (HTML pages; license to be confirmed on first fetch, believed BSD-3).
+Out-of-distribution corpus: the scikit-learn user guide (HTML pages; license to be confirmed on first fetch, believed BSD-3).
 
 ## Pipeline (LangGraph)
 
@@ -54,7 +54,7 @@ Multi-agent ablation: flat graph (blind retry) vs Researcher / Writer / Critic s
 - Questions are generated from chunks (Super), single-chunk and two-chapter multi-hop; the source chunk is the gold passage. Unanswerable questions target topics absent from the book (guarded by a substring check).
 - **Split by chapter, never randomly** (the book repeats itself): train / dev / test chapters. Unanswerable topics are split the same way.
 - The author hand-writes 50–100 questions (evaluation only; reported separately because they are not chapter-held-out) and hand-checks 50 generated items.
-- G3 training data is synthetic (faithful answer vs one-fact-corrupted answer). Dev/test G3 rows use real Gemma answers labeled by Super. Real-hallucination data (RAGTruth) is an optional extension only if G3 underperforms.
+- G3 training data uses real Gemma answers from retrieved passages, generated at temperatures 0.0 and 0.7 and labeled by Super. Dev and test rows use temperature 0.0. The first design used faithful answers against corrupted ones, but the writing style gave the class away, so it was replaced. Real-hallucination data (RAGTruth) is an optional extension only if G3 underperforms.
 - Dev set picks the cascade threshold per gate; test is touched once per reported number.
 
 ## Evaluation
@@ -70,7 +70,9 @@ Equally publishable outcomes: Laya fails on some gates (likely G3/G4), and the r
 
 ## Deliverables
 
-GitHub repo (code, results CSV/PNG, README with the plots), write-up in the README, 90 s screen recording, public Kaggle notebook running on the scikit-learn corpus, résumé lines with the measured numbers.
+GitHub repo (code, results CSV/PNG, README with the plots), write-up in the README, 90 s screen recording, résumé lines with the measured numbers.
+
+The public Kaggle demo notebook is deferred at the author's request. Readers can reproduce the experiments with the repository notebooks, using their own corpus, API credentials and saved backups. The demo is not required for the current delivery.
 
 ## Risks
 
