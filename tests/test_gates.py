@@ -60,3 +60,11 @@ def test_laya_gate_load_names_the_missing_folder_instead_of_asking_the_hub(tmp_p
     from gatekeep.gates import LayaGate
     with pytest.raises(FileNotFoundError, match="notebook 04"):
         LayaGate.load({"route": (str(tmp_path / "models" / "route"), None)})
+
+
+def test_laya_gate_load_rejects_a_folder_without_weights(tmp_path):
+    import pytest
+    from gatekeep.gates import LayaGate
+    (tmp_path / "route").mkdir()  # the folder exists (e.g. a restored ckpts.json) but the 3 GB of weights did not travel
+    with pytest.raises(FileNotFoundError, match="model.safetensors"):
+        LayaGate.load({"route": (str(tmp_path / "route"), None)})

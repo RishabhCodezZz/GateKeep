@@ -82,8 +82,8 @@ class LayaGate(Gate):
     def load(cls, ckpts):
         """ckpts = {gate: (checkpoint_dir, calibration_json_path_or_None)}"""
         for gate, (ck, _) in ckpts.items():
-            if not os.path.isdir(ck):  # laya.load would take a missing folder for a Hugging Face repo and fail with a 401
-                raise FileNotFoundError(f"fine-tuned model folder '{ck}' for gate '{gate}' is missing: attach notebook 04's "
+            if not os.path.isfile(os.path.join(ck, "model.safetensors")):  # laya.load would take a missing folder for a Hugging Face repo and fail with a 401
+                raise FileNotFoundError(f"fine-tuned weights '{ck}/model.safetensors' for gate '{gate}' are missing: attach notebook 04's "
                                         "OUTPUT as an input (it must have been saved with Save & Run All), or re-run notebook 04")
         import laya
         agents = {}

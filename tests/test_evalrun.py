@@ -103,3 +103,12 @@ def test_rows_record_why_a_question_was_refused_or_retried():
     llm = FakeLLM("CORRECT")
     row = run_variant(Routed(llm), LLMGate(llm), llm, [ITEM])[0]
     assert (row["route"], row["rewrites"], row["regens"], row["kept"]) == ("retrieve", 1, 2, 1)
+
+
+def test_faithfulness_is_not_scored_without_passages_or_after_a_refusal():
+    class NoDocs(FakeLLM):
+        pass
+    assert judge(NoDocs(), ITEM, {"answer": "an answer", "docs": []})["faithful"] is None
+    assert judge(NoDocs(), ITEM, {"answer": REFUSAL, "docs": [{"text": "t"}]})["faithful"] is None
+    assert judge(FakeLLM("YES"), ITEM, {"answer": "an answer", "docs": [{"text": "t"}]})["faithful"] == 1
+    assert judge(FakeLLM("NO"), ITEM, {"answer": "an answer", "docs": [{"text": "t"}]})["faithful"] == 0

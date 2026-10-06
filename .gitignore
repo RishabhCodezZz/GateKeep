@@ -14,3 +14,7 @@ notebooks/*_output.ipynb
 /review*.csv
 /handwritten*.jsonl
 /handwritten*.csv
+
+# generated answers and questions are derived from the book
+results/*rows*.jsonl
+.claude/

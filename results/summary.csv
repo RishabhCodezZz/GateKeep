@@ -1,3 +1,4 @@
+variant,metric,mean,ci_lo,ci_hi
 V0,correct,0.9563,0.9329,0.9767
 V0,faithful,0.691,0.6472,0.7405
 V0,llm_calls,1.0,1.0,1.0

@@ -36,3 +36,8 @@ def test_bootstrap_ci_brackets_the_mean():
 
 def test_macro_f1_perfect():
     assert macro_f1(["a", "b"], ["a", "b"]) == 1.0
+
+
+def test_ece_ignores_unparsed_replies_with_zero_confidence():
+    # a reply that could not be parsed carries confidence 0 and falls outside every bin
+    assert ece([1.0, 1.0, 0.0, 0.0], [1, 1, 0, 0]) == 0

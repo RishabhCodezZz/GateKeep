@@ -91,7 +91,7 @@ def read_rows(path):
 
 @command
 def variants(names="V0,V1", limit="", tau_file="results/tau.json", agents="0", prefix="", items_file="data/qa_test.jsonl"):
-    """Run end-to-end variants; write results/<prefix>rows_<variant>.jsonl and append to results/summary.csv.
+    """Run end-to-end variants; write results/<prefix>rows_<variant>.jsonl and update results/summary.csv (a rerun replaces its own rows).
     prefix keeps side runs apart (e.g. "tau0.9_", "ood_", "hw_"); `report` only reads rows_*.jsonl."""
     import csv
     from gatekeep import evalrun
@@ -102,7 +102,9 @@ def variants(names="V0,V1", limit="", tau_file="results/tau.json", agents="0", p
     if any(v in names for v in ("V2", "V3")):
         from gatekeep.gates import LayaGate
         laya = LayaGate.load(json.load(open("models/ckpts.json")))
-    tau = json.load(open(tau_file)) if Path(tau_file).exists() else 0.8
+    tau = 0.8  # V0 and V1 do not use it
+    if any(v in names for v in ("V2", "V3")):
+        tau = json.load(open(tau_file))  # no silent default: a missing file would quietly change the cascade
     Path("results").mkdir(exist_ok=True)
     summaries = {}
     for v in names.split(","):
@@ -113,8 +115,12 @@ def variants(names="V0,V1", limit="", tau_file="results/tau.json", agents="0", p
         tag = prefix + v + suffix
         summaries[tag] = evalrun.summarize(rows)
         print(tag, {k: round(m[0], 3) for k, m in summaries[tag].items()}, "| empty replies:", llm.empty)
-    with open("results/summary.csv", "a", newline="") as f:
+    path = Path("results/summary.csv")
+    kept = [r for r in csv.reader(open(path, newline="")) if r and r[0] != "variant" and r[0] not in summaries] if path.exists() else []
+    with open(path, "w", newline="") as f:  # rows of a rerun variant replace the old ones instead of duplicating
         w = csv.writer(f)
+        w.writerow(["variant", "metric", "mean", "ci_lo", "ci_hi"])
+        w.writerows(kept)
         for tag, s in summaries.items():
             for k, (m, lo, hi) in s.items():
                 w.writerow([tag, k, round(m, 4), round(lo, 4), round(hi, 4)])
