@@ -2,7 +2,7 @@
 import time
 
 from gatekeep.gates import GATES, Cascade, Gate, LLMGate
-from gatekeep.graph import build_graph
+from gatekeep.graph import REFUSAL, build_graph
 
 
 class Recorder(Gate):
@@ -57,6 +57,8 @@ def ask(question, index, llm, laya, taus):
             log.clear()
             docs = out.get("docs", docs)
             answer = out.get("answer", answer)
+    if answer == REFUSAL:  # the pipeline's fixed message says "book"; this demo answers from the scikit-learn user guide
+        answer = "I can't answer that from the scikit-learn user guide."
     return answer, trace, [d["text"] for d in docs], time.perf_counter() - t0
 
 
