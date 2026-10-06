@@ -138,5 +138,3 @@ Run the notebooks in `notebooks/` in order on Kaggle (GPU T4, internet on, an `O
 ## Credits
 
 scikit-learn documentation © The scikit-learn developers, BSD-3-Clause. The pages are downloaded at run time and are not included here.
-
-Video: link to be added.
