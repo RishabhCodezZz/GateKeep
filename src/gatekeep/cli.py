@@ -275,6 +275,19 @@ def validate_grader(n="200"):
     print("Super-vs-Ultra agreement:", evalrun.agreement(LLM(), items, rows, int(n)))
 
 
+@command
+def prepare_dir(folder):
+    """Parse every .html in a folder; chapter = file name. Writes data/chunks.json."""
+    from gatekeep import corpus
+    out = []
+    for p in sorted(Path(folder).glob("*.html")):
+        for c in corpus.chunk(corpus.parse(str(p)), tag=p.stem):
+            out.append({**c, "id": len(out)})
+    Path("data").mkdir(exist_ok=True)
+    json.dump(out, open("data/chunks.json", "w"))
+    print(len(out), "chunks from", len({c["chapter"] for c in out}), "pages")
+
+
 # --- new commands go above this line ---
 
 if __name__ == "__main__":
