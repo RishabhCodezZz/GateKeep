@@ -16,6 +16,6 @@ notebooks/*_output.ipynb
 /handwritten*.csv
 
 # generated answers and questions are derived from the book
-results/*rows*.jsonl
+results/**/*rows*.jsonl
 .claude/
 .superpowers/
