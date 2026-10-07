@@ -75,3 +75,18 @@ def test_unknown_mode_is_rejected():
     import pytest
     with pytest.raises(ValueError):
         list(ask_events("x", FakeIndex(), FakeLLM(), laya(1.0), TAUS, "turbo"))
+
+
+class YesGradeLLM(FakeLLM):
+    def chat(self, model, prompt, **kw):
+        return "yes" if prompt.startswith("Does the passage") else super().chat(model, prompt, **kw)
+
+
+def test_fast_mode_asks_gemma_only_when_laya_rejects_every_passage():
+    strict = Scripted(lambda g, t: ("retrieve", 1.0) if g == "route" else ("no", 0.9) if g == "grade" else ("yes", 0.9))
+    evs = list(ask_events("what is the difference between bagging and boosting?", FakeIndex(), YesGradeLLM(), strict, TAUS, "fast"))
+    grade = [e for e in evs if e["type"] == "gate" and e["gate"] == "grade"]
+    assert grade[0]["who"] == "Laya, then Gemma for 5 of 5" and grade[0]["labels"] == ["yes"] * 5
+    assert evs[-2]["refused"] is False
+    others = [e for e in evs if e["type"] == "gate" and e["gate"] != "grade"]
+    assert all(e["who"] == "Laya" for e in others)

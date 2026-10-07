@@ -20,6 +20,22 @@ class Recorder(Gate):
         return out
 
 
+class AllNoFallback(Gate):
+    """Fast mode's grade gate: Laya decides, but when it rejects every passage Gemma re-checks them once.
+    Laya's grade gate learned "this passage alone answers the question", so it rejects every passage of a broad
+    or comparison question; the measured V2 has no such fallback (see README)."""
+    def __init__(self, fast, slow):
+        self.fast, self.slow, self.escalated = fast, slow, 0
+
+    def decide_many(self, gate, texts):
+        out = self.fast.decide_many(gate, texts)
+        self.last_s = self.fast.last_s
+        if len(texts) > 1 and all(label == "no" for label, _ in out):
+            out = self.slow.decide_many(gate, texts)
+            self.escalated += len(texts)
+        return out
+
+
 def who(e):
     return "Laya" if not e["escalated"] else f"Laya, then Gemma for {e['escalated']} of {e['n']}"
 
@@ -48,8 +64,8 @@ def describe(node, out):
 
 
 def _gates(mode, laya, llm, taus, log):
-    if mode == "fast":   # V2: every gate by Laya
-        return {g: Recorder(laya, log) for g in GATES}
+    if mode == "fast":   # V2 (every gate by Laya), plus a Gemma re-check when Laya rejects every passage
+        return {g: Recorder(AllNoFallback(laya, LLMGate(llm)) if g == "grade" else laya, log) for g in GATES}
     if mode == "careful":  # V3: Laya first, Gemma when Laya is unsure
         return {g: Recorder(Cascade(laya, LLMGate(llm), taus[g]), log) for g in GATES}
     raise ValueError(f"unknown mode {mode!r}: use 'fast' or 'careful'")
