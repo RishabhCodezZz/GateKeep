@@ -213,6 +213,18 @@ Super and Ultra agree on correctness for 95.5% of 200 sampled v1 V1 answers. Thi
 - The scikit-learn test set is small, and its share of unanswerable questions is high.
 - Adaptive-RAG and Corrective RAG already use small classifiers as gates, and Laya ships a `LayaRouter` for LangGraph. This project measures how a recent model performs in that role.
 
+## Web app
+
+A local page for asking questions and watching each gate decide. It runs on your PC only (`127.0.0.1`) and needs the v2 weights in `models/`, `results/tau.json` and your Ollama key.
+
+```powershell
+$env:OLLAMA_API_KEY = [Environment]::GetEnvironmentVariable('OLLAMA_API_KEY','User'); $env:PYTHONPATH = "src"; .\.venv\Scripts\python.exe -m gatekeep.cli web
+```
+
+Careful mode is V3: Laya decides first and Gemma steps in when Laya is unsure (about 8 LLM calls per answer). Fast mode is V2 with one addition: when Laya's grade gate rejects every retrieved passage, Gemma re-checks them once. Without it, Fast mode refused broad and comparison questions the book covers, such as "What is the difference between bagging and boosting?", because Laya's grade gate learned to accept a passage only when it answers the question on its own. The measured V2 results above have no such re-check.
+
+The book corpus uses your own copy of the book. The scikit-learn docs need a one-time `python scripts/fetch_sklearn_docs.py` and `python -m gatekeep.cli prepare_dir data/sk data/sk/chunks.json`. On a 4 GB laptop GPU the four Laya gates nearly fill the memory, so an answer takes 10 to 20 seconds; on Kaggle's T4 a gate decision takes about 35 ms.
+
 ## Reproducing
 
 The unit tests run on a laptop with Python 3.12 and need no models or API keys. On Windows:
