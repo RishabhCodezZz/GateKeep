@@ -24,13 +24,10 @@ def coverage_curve(conf, correct, taus):
     return out
 
 
-def pick_tau(conf, correct, target, taus=None, floor=0.0):
-    """Smallest threshold whose accepted decisions reach max(target, floor) accuracy.
-    The floor matters when the LLM judge is itself weak: v1's router matched Gemma's 74% and never deferred."""
+def pick_tau(conf, correct, target, taus=None):
     taus = np.round(np.arange(0.5, 1.0, 0.01), 2) if taus is None else taus
-    goal = max(target, floor)
     for t, _, acc in coverage_curve(conf, correct, taus):
-        if acc == acc and acc >= goal:  # acc == acc filters NaN
+        if acc == acc and acc >= target:  # acc == acc filters NaN
             return float(t)
     return 1.01
 

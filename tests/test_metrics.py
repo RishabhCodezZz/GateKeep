@@ -47,4 +47,4 @@ def test_pick_tau_never_aims_below_the_floor():
     conf = [0.55, 0.6, 0.7, 0.8, 0.9, 0.95]
     ok = [0, 1, 0, 1, 1, 1]
     assert pick_tau(conf, ok, target=0.6) == 0.5             # matching a weak judge accepts everything
-    assert pick_tau(conf, ok, target=0.6, floor=0.9) == 0.71  # the floor forces a real threshold
+    assert pick_tau(conf, ok, target=max(0.6, 0.9)) == 0.71  # the floor forces a real threshold

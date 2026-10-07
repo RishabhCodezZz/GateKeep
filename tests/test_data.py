@@ -1,3 +1,5 @@
+import pytest
+
 from gatekeep import data
 
 ITEMS = [{"id": "a", "q": "What is X?", "a": "X is Y.", "gold": [0], "chapter": "c1", "answerable": True},
@@ -25,13 +27,16 @@ def test_gold_for_gives_soft_probabilities_like_the_official_recipe():
     assert p["direct"] == 0.9 and p["retrieve"] == p["off_topic"] == 0.05
 
 
-def test_target_vector_is_one_hot_in_lay_option_order():
+def test_target_vector_is_one_hot_in_laya_option_order():
     assert data.target_vector("grade", "yes") == [0.0, 1.0]   # noul options are [false, true]
     assert data.target_vector("route", "off_topic") == [0.0, 0.0, 1.0]  # criteria order
 
 
-def test_balance_rows_is_gone():
-    assert not hasattr(data, "balance_rows")  # copies leaked into the calibration slice in v1
+def test_an_unknown_label_raises_instead_of_giving_an_empty_target():
+    with pytest.raises(ValueError, match="out_of_scope"):
+        data.target_vector("route", "out_of_scope")  # a stale v1 label would give an all-zero target
+    with pytest.raises(ValueError, match="maybe"):
+        data.gold_for("grade", "maybe")
 
 
 def test_g1_sends_every_book_question_to_retrieval_and_adds_the_new_classes():

@@ -58,7 +58,7 @@ def test_sk_gate_learns_a_trivial_rule():
 def test_laya_gate_load_names_the_missing_folder_instead_of_asking_the_hub(tmp_path):
     import pytest
     from gatekeep.gates import LayaGate
-    with pytest.raises(FileNotFoundError, match="notebook 04"):
+    with pytest.raises(FileNotFoundError, match=r"fine-tuning notebook \(04 for v1, 10 for v2\)"):
         LayaGate.load({"route": (str(tmp_path / "models" / "route"), None)})
 
 

@@ -235,9 +235,11 @@ def evalgates(backends="llm,sklearn"):
             per = " ".join(f"{k}={v:.2f}" for k, v in r["per_label_recall"].items())
             print(f"{gate:10s} {name:10s} test: acc {r['acc']:.3f} | f1 {r['f1']:.3f} | ece {r['ece']:.3f} | "
                   f"let-through (recall of yes) {ty} | recall per label: {per} | p50 {r['p50_ms']:.1f} ms")
-        if tuned:  # cascade threshold: smallest tau where Laya's accepted dev decisions match the LLM judge's dev accuracy
+        # cascade threshold: smallest tau where Laya's accepted dev decisions reach the LLM judge's dev accuracy or the
+        # 0.90 floor (TAU_FLOOR), whichever is higher; v1's router matched a weak judge's 74% and never deferred
+        if tuned:
             target = res[("llm", "dev")]["acc"] if "llm" in wanted else eg.dev_acc_from_csv("results/gates.csv", gate, "llm")
-            taus[gate] = pick_tau(res[("laya-ft", "dev")]["conf"], res[("laya-ft", "dev")]["ok"], target=target, floor=TAU_FLOOR)
+            taus[gate] = pick_tau(res[("laya-ft", "dev")]["conf"], res[("laya-ft", "dev")]["ok"], target=max(target, TAU_FLOOR))
             print(gate, "tau =", taus[gate])
     eg.save_rows("results/gates.csv", header, new_rows)  # replaces earlier rows for the same gate/backend/split
     if taus:
@@ -319,7 +321,7 @@ def calibrate():
 
 
 @command
-def token_check(budget="768"):
+def token_check():
     """Share of each gate's rows longer than Laya's state budget (max_len 1024 minus 256 for the question)."""
     import os
     from huggingface_hub import snapshot_download
@@ -330,7 +332,7 @@ def token_check(budget="768"):
     tok = AutoTokenizer.from_pretrained(os.path.join(model_dir, "tokenizer"))
     for p in sorted(Path("data/gates").glob("*_train.jsonl")):
         n = [len(tok(r["text"]).input_ids) for r in read_rows(p)]
-        print(f"{p.stem:20s} over {budget}: {sum(x > int(budget) for x in n) / len(n):.1%} | longest {max(n)}")
+        print(f"{p.stem:20s} over 768: {sum(x > 768 for x in n) / len(n):.1%} | longest {max(n)}")
 
 
 # --- new commands go above this line ---

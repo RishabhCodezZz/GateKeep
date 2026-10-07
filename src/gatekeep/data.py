@@ -74,10 +74,8 @@ def split_messages(msgs, seed=0, dev=0.15, test=0.25):
 def g1_rows(items, direct, general=(), off_topic=()):
     """Route rows. Every book question is 'retrieve', answerable or not: whether the book covers a topic is
     decided after retrieval by the grade gate, never guessed from the question (v1's mistake)."""
-    rows = [{"text": it["q"], "label": "retrieve"} for it in items]
-    rows += [{"text": t, "label": "retrieve"} for t in general]
-    rows += [{"text": t, "label": "off_topic"} for t in off_topic]
-    return rows + [{"text": t, "label": "direct"} for t in direct]
+    pairs = (("retrieve", [it["q"] for it in items]), ("retrieve", general), ("off_topic", off_topic), ("direct", direct))
+    return [{"text": t, "label": label} for label, texts in pairs for t in texts]
 
 
 def g2_rows(llm, index, items, by_id, negs=2):
@@ -136,13 +134,16 @@ def _options(gate):
 
 
 def _hit(gate, label):
-    return {"yes": "true", "no": "false"}.get(label, label) if GATES[gate]["q"]["type"] == "noul" else label
+    hit = {"yes": "true", "no": "false"}.get(label, label) if GATES[gate]["q"]["type"] == "noul" else label
+    if hit not in _options(gate):  # a stale label (v1's out_of_scope) would silently give an empty target
+        raise ValueError(f"label {label!r} is not an option of gate {gate!r}: {_options(gate)}")
+    return hit
 
 
-def gold_for(gate, label, smooth=SMOOTH):
+def gold_for(gate, label):
     """The training target Laya's official fine-tuning notebook reads: a probability per option."""
     keys, hit = _options(gate), _hit(gate, label)
-    return {"probabilities": {k: round(1 - smooth if k == hit else smooth / (len(keys) - 1), 6) for k in keys}}
+    return {"probabilities": {k: round(1 - SMOOTH if k == hit else SMOOTH / (len(keys) - 1), 6) for k in keys}}
 
 
 def target_vector(gate, label):

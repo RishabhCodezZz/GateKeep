@@ -83,8 +83,8 @@ class LayaGate(Gate):
         """ckpts = {gate: (checkpoint_dir, calibration_json_path_or_None)}"""
         for gate, (ck, _) in ckpts.items():
             if not os.path.isfile(os.path.join(ck, "model.safetensors")):  # laya.load would take a missing folder for a Hugging Face repo and fail with a 401
-                raise FileNotFoundError(f"fine-tuned weights '{ck}/model.safetensors' for gate '{gate}' are missing: attach notebook 04's "
-                                        "OUTPUT as an input (it must have been saved with Save & Run All), or re-run notebook 04")
+                raise FileNotFoundError(f"fine-tuned weights '{ck}/model.safetensors' for gate '{gate}' are missing: attach the OUTPUT of the fine-tuning "
+                                        "notebook (04 for v1, 10 for v2) as an input (it must have been saved with Save & Run All), or re-run it")
         import laya
         agents = {}
         for gate, (ck, cal) in ckpts.items():
@@ -103,8 +103,7 @@ class LayaGate(Gate):
             if GATES[gate]["q"]["type"] == "noul":
                 p = a["noul"]
                 # Binning (calibration) is applied to answer_confidence only; use it for confidence
-                conf = a["answer_confidence"]
-                out.append(("yes", conf) if p >= 0.5 else ("no", conf))
+                out.append(("yes" if p >= 0.5 else "no", a["answer_confidence"]))
             else:
                 out.append((a["choice"], a["answer_confidence"]))
         self.last_s = time.perf_counter() - t0
