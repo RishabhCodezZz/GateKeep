@@ -1,5 +1,5 @@
 """Command line entry: python -m gatekeep.cli <command> [args...]"""
-import argparse, json
+import argparse, json, os
 from collections import Counter
 from pathlib import Path
 
@@ -323,7 +323,6 @@ def calibrate():
 @command
 def token_check():
     """Share of each gate's rows longer than Laya's state budget (max_len 1024 minus 256 for the question)."""
-    import os
     from huggingface_hub import snapshot_download
     from laya.agent import _fix_tokenizer_config  # notebook 04 does the same before loading the tokenizer
     from transformers import AutoTokenizer
@@ -351,6 +350,9 @@ WEB_CORPORA = {  # name: (label, chunks file, how to prepare it, example questio
 @command
 def web(port="8000"):
     """Local web app on http://127.0.0.1:<port>: Fast (all Laya) or Careful (Laya, then Gemma), book or scikit-learn docs."""
+    port = int(port)
+    if not os.environ.get("OLLAMA_API_KEY"):
+        raise SystemExit("OLLAMA_API_KEY is not set: load it with $env:OLLAMA_API_KEY = [Environment]::GetEnvironmentVariable('OLLAMA_API_KEY','User')")
     import webbrowser
     from gatekeep import demo
     from gatekeep.corpus import Index
@@ -362,13 +364,17 @@ def web(port="8000"):
         if not Path(f).exists():
             raise SystemExit(f"{f} is missing: {fix}")
     llm, taus = LLM(), json.load(open("results/tau.json"))
-    laya = LayaGate.load(json.load(open("models/ckpts.json")))  # names any missing weights or calibration file
+    try:
+        laya = LayaGate.load(json.load(open("models/ckpts.json")))  # names any missing weights or calibration file
+    except Exception as e:
+        raise SystemExit(f"loading the Laya gates failed: {e} (if CUDA is out of memory, close other GPU apps)")
     corpora = {}
     for name, (label, path, prepare, examples) in WEB_CORPORA.items():
-        print("building the", label, "index" if Path(path).exists() else "index: skipped, not prepared")
+        ready = Path(path).exists()
+        print("building the", label, "index" if ready else "index: skipped, not prepared")
         corpora[name] = {"label": label, "prepare": prepare, "examples": examples,
-                         "index": Index(load_chunks(path), device="cpu") if Path(path).exists() else None}
-    srv = make_server(corpora, lambda q, index, mode: demo.ask_events(q, index, llm, laya, taus, mode), int(port))
+                         "index": Index(load_chunks(path), device="cpu") if ready else None}
+    srv = make_server(corpora, lambda q, index, mode: demo.ask_events(q, index, llm, laya, taus, mode), port)
     url = f"http://127.0.0.1:{srv.server_address[1]}"
     print("GateKeep is running at", url, "(Ctrl+C to stop)")
     webbrowser.open(url)
