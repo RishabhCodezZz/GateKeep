@@ -22,6 +22,6 @@ def test_low_confidence_is_shown_as_handed_to_gemma():
     assert "Laya, then Gemma for 1 of 1" in "\n".join(trace)
 
 
-def test_out_of_scope_shows_a_refusal_and_no_passages():
-    answer, trace, passages, _ = ask("lora?", FakeIndex(), FakeLLM(), laya(1.0, "out_of_scope"), TAUS)
-    assert "user guide" in answer and answer != REFUSAL and passages == [] and trace[0] == "route -> out_of_scope"
+def test_off_topic_shows_a_refusal_and_no_passages():
+    answer, trace, passages, _ = ask("capital of France?", FakeIndex(), FakeLLM(), laya(1.0, "off_topic"), TAUS)
+    assert "user guide" in answer and answer != REFUSAL and passages == [] and trace[0] == "route -> off_topic"

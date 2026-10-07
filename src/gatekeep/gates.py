@@ -5,10 +5,10 @@ from gatekeep.llm import GEMMA
 
 GATES = {
     "route": {"q": {"type": "choice",
-                    "instructions": "Does this question need a lookup in the machine-learning textbook?",
-                    "criteria": {"retrieve": "a question about machine-learning concepts, methods or code the textbook could cover",
+                    "instructions": "Is this message a machine-learning question to look up, small talk, or about something else?",
+                    "criteria": {"retrieve": "a question about machine learning, data or ML programming, even if the textbook may not cover it",
                                  "direct": "greeting, thanks or trivial arithmetic that needs no lookup",
-                                 "out_of_scope": "not about the textbook's subject, or about techniques it does not cover"}},
+                                 "off_topic": "clearly not about machine learning or data, such as geography, cooking, sports or celebrities"}},
               "default": "retrieve"},
     "grade": {"q": {"type": "noul", "instructions": "Does the passage contain information needed to answer the question?"},
               "default": "no"},

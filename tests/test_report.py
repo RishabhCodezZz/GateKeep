@@ -42,3 +42,8 @@ def test_plots_are_written(tmp_path):
     plot_tradeoff({"V1": (8.0, 0.8), "V3": (3.0, 0.78)}, str(tmp_path / "t.png"))
     plot_coverage({"route": [(0.5, 1.0, 0.8), (0.9, 0.5, 0.95)]}, str(tmp_path / "c.png"))
     assert (tmp_path / "t.png").stat().st_size > 0 and (tmp_path / "c.png").stat().st_size > 0
+
+
+def test_breakdown_counts_v2_router_refusals_too():
+    rows = [row(True, REFUSAL, 0, route="off_topic", kept=0), row(True, REFUSAL, 0, route="out_of_scope", kept=0)]
+    assert breakdown(rows)["refused_by_router"] == 2  # v1 rows say out_of_scope, v2 rows say off_topic

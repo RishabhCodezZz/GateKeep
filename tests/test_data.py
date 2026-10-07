@@ -21,7 +21,7 @@ class FakeLLM:
 def test_gold_for_encodes_the_probabilities_laya_trains_on():
     assert data.gold_for("grade", "yes") == {"probabilities": {"true": 1.0, "false": 0.0}}
     assert data.gold_for("grade", "no") == {"probabilities": {"true": 0.0, "false": 1.0}}
-    assert data.gold_for("route", "direct") == {"probabilities": {"retrieve": 0.0, "direct": 1.0, "out_of_scope": 0.0}}
+    assert data.gold_for("route", "direct") == {"probabilities": {"retrieve": 0.0, "direct": 1.0, "off_topic": 0.0}}
 
 
 def test_balance_rows_repeats_minority_classes_up_to_a_share_of_the_majority():
@@ -36,9 +36,35 @@ def test_balance_rows_leaves_a_balanced_set_alone():
     assert data.balance_rows(rows) == rows
 
 
-def test_g1_labels_by_answerability():
-    rows = data.g1_rows(ITEMS, ["hello there"])
-    assert {r["label"] for r in rows} == {"retrieve", "out_of_scope", "direct"}
+def test_g1_sends_every_book_question_to_retrieval_and_adds_the_new_classes():
+    rows = data.g1_rows(ITEMS, ["hello there"], ["what is a GAN?"], ["capital of France?"])
+    labels = {r["text"]: r["label"] for r in rows}
+    assert all(labels[it["q"]] == "retrieve" for it in ITEMS)  # answerable or not: grading decides coverage
+    assert labels["what is a GAN?"] == "retrieve" and labels["capital of France?"] == "off_topic"
+    assert labels["hello there"] == "direct"
+
+
+def test_split_messages_shuffles_before_cutting_and_keeps_every_message_once():
+    msgs = [f"m{i}" for i in range(100)]
+    sp = data.split_messages(msgs)
+    assert [len(sp[k]) for k in ("train", "dev", "test")] == [60, 15, 25]
+    assert sorted(sp["train"] + sp["dev"] + sp["test"]) == sorted(msgs)
+    assert sp["train"] != msgs[:60]  # shuffled, so one kind of message cannot fill a whole split
+
+
+def test_gen_ml_short_and_gen_off_topic_use_their_own_rules():
+    class Spy(FakeLLM):
+        prompts = []
+
+        def chat(self, model, prompt, **kw):
+            self.prompts.append(prompt)
+            return "a message"
+
+    llm = Spy()
+    data.gen_ml_short(llm, 5)
+    data.gen_off_topic(llm, 5)
+    assert any("about machine learning" in p and "must be short" in p for p in llm.prompts)
+    assert any("must not be about machine learning, data or programming" in p for p in llm.prompts)
 
 
 def test_g2_gold_positive_and_relabeled_negative():

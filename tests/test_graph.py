@@ -40,8 +40,8 @@ def happy(gate, text):
     return ("retrieve", 1.0) if gate == "route" else ("yes", 1.0)
 
 
-def test_out_of_scope_refuses_without_retrieval():
-    r = app(lambda g, t: ("out_of_scope", 1.0) if g == "route" else ("yes", 1.0)).invoke({"q": "x"})
+def test_off_topic_refuses_without_retrieval():
+    r = app(lambda g, t: ("off_topic", 1.0) if g == "route" else ("yes", 1.0)).invoke({"q": "x"})
     assert r["answer"] == REFUSAL and "docs" not in r
 
 

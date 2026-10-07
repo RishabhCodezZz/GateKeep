@@ -97,7 +97,7 @@ def make_nodes(index, llm, gates, model, use_gates, max_rewrites, max_regen, fee
                 "feedback": why if feedback else ""}
 
     def after_route(s):
-        return {"retrieve": "retrieve", "direct": "direct", "out_of_scope": "refuse"}[s["route"]]
+        return {"retrieve": "retrieve", "direct": "direct", "off_topic": "refuse"}[s["route"]]
 
     def after_grade(s):
         if s["docs"]:

@@ -23,7 +23,7 @@ def test_llm_gate_parses_yes_no():
 
 
 def test_llm_gate_parses_choice_label():
-    assert LLMGate(FakeLLM("out_of_scope")).decide("route", "x")[0] == "out_of_scope"
+    assert LLMGate(FakeLLM("off_topic")).decide("route", "x")[0] == "off_topic"
 
 
 def test_llm_gate_unparseable_uses_default_and_counts():

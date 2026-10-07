@@ -26,14 +26,23 @@ DIRECT_KINDS = ["greetings", "thanks and goodbyes", "small talk about the assist
 _LIST_MARK = re.compile(r"^\s*(\d+[.)]|[-*•])\s*")
 
 
-def gen_direct(llm, n=120):
-    """Chit-chat that needs no lookup. One message per line: the first run asked for JSON, got something unparseable,
+ML_SHORT_KINDS = ["one-line 'what is X' questions about basic machine-learning terms",
+                  "short how-to questions about training or evaluating a model",
+                  "questions a beginner would type about neural networks or deep learning",
+                  "short questions about data preparation, features or metrics",
+                  "short questions about recent ML topics such as LLMs, LoRA, RAG or diffusion models"]
+OFF_TOPIC_KINDS = ["geography and travel", "cooking and food", "sports", "history and politics",
+                   "films, music and celebrities", "health and everyday life", "shopping and personal finance"]
+
+
+def gen_messages(llm, kinds, n, rule):
+    """Short user messages, one per line. The first run asked for JSON, got something unparseable,
     and silently returned nothing, so the 'direct' class vanished from gate 1."""
-    per = -(-n // len(DIRECT_KINDS))
+    per = -(-n // len(kinds))
     out = []
-    for kind in DIRECT_KINDS:
+    for kind in kinds:
         text = llm.chat(SUPER, f"Write {per} different short messages a user might send to an assistant: {kind}. "
-                               "They must not be about machine learning. One message per line, no numbering, no quotes.",
+                               f"{rule} One message per line, no numbering, no quotes.",
                         max_tokens=800, temperature=0.7)
         for line in text.splitlines():
             m = _LIST_MARK.sub("", line).strip().strip("\"'")
@@ -42,9 +51,33 @@ def gen_direct(llm, n=120):
     return out[:n]
 
 
-def g1_rows(items, direct_texts):
-    rows = [{"text": it["q"], "label": "retrieve" if it["answerable"] else "out_of_scope"} for it in items]
-    return rows + [{"text": t, "label": "direct"} for t in direct_texts]
+def gen_direct(llm, n=120):
+    return gen_messages(llm, DIRECT_KINDS, n, "They must not be about machine learning.")  # same prompt as v1: cached
+
+
+def gen_ml_short(llm, n=160):
+    return gen_messages(llm, ML_SHORT_KINDS, n, "They must be short questions about machine learning.")
+
+
+def gen_off_topic(llm, n=160):
+    return gen_messages(llm, OFF_TOPIC_KINDS, n, "They must not be about machine learning, data or programming.")
+
+
+def split_messages(msgs, seed=0, dev=0.15, test=0.25):
+    """Shuffle, then cut: v1 cut in generation order, so each split held different kinds of message."""
+    m = list(msgs)
+    random.Random(seed).shuffle(m)
+    a, b = round(len(m) * (1 - dev - test)), round(len(m) * (1 - test))
+    return {"train": m[:a], "dev": m[a:b], "test": m[b:]}
+
+
+def g1_rows(items, direct, general=(), off_topic=()):
+    """Route rows. Every book question is 'retrieve', answerable or not: whether the book covers a topic is
+    decided after retrieval by the grade gate, never guessed from the question (v1's mistake)."""
+    rows = [{"text": it["q"], "label": "retrieve"} for it in items]
+    rows += [{"text": t, "label": "retrieve"} for t in general]
+    rows += [{"text": t, "label": "off_topic"} for t in off_topic]
+    return rows + [{"text": t, "label": "direct"} for t in direct]
 
 
 def g2_rows(llm, index, items, by_id, negs=2):

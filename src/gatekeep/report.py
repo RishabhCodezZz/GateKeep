@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 
 from gatekeep.graph import REFUSAL
 
+ROUTER_REFUSALS = ("off_topic", "out_of_scope")  # v2 label, and v1's for the archived rows
+
 
 def _mean(xs):
     return sum(xs) / len(xs) if xs else None
@@ -21,8 +23,8 @@ def breakdown(rows):
             "correct_answerable": _mean([r["correct"] for r in ans]),
             "correct_unanswerable": _mean([r["correct"] for r in una]),
             "refused_answerable": len(refused),
-            "refused_by_router": sum(r.get("route") == "out_of_scope" for r in refused),
-            "refused_after_grading": sum(r.get("route") != "out_of_scope" for r in refused),
+            "refused_by_router": sum(r.get("route") in ROUTER_REFUSALS for r in refused),
+            "refused_after_grading": sum(r.get("route") not in ROUTER_REFUSALS for r in refused),
             "correct_when_answered": _mean([r["correct"] for r in answered])}
 
 

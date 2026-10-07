@@ -132,12 +132,12 @@ def gatedata():
     from gatekeep import data
     llm, index, qa = load_system()
     by_id = {c["id"]: c for c in index.chunks}
-    direct = data.gen_direct(llm, 120)  # chit-chat that needs no lookup; the first run had only 28 train / 9 test examples
-    cut = {"train": direct[:80], "dev": direct[80:90], "test": direct[90:]}
+    msgs = {"direct": data.gen_direct(llm, 120), "general": data.gen_ml_short(llm, 160),
+            "off_topic": data.gen_off_topic(llm, 160)}
+    cut = {k: data.split_messages(v) for k, v in msgs.items()}
     for split in ("train", "dev", "test"):
         items = qa.load(f"data/qa_{split}.jsonl")
-        route = data.g1_rows(items, cut[split])
-        rows_by_gate = {"route": data.balance_rows(route) if split == "train" else route,  # rare classes repeated, training only
+        rows_by_gate = {"route": data.g1_rows(items, cut["direct"][split], cut["general"][split], cut["off_topic"][split]),
                         "grade": data.g2_rows(llm, index, items, by_id),
                         # real Gemma answers for every split; training gets a second, warmer answer per question
                         "grounded": data.g3_rows(llm, index, items, by_id, temps=(0.0, 0.7) if split == "train" else (0.0,)),
