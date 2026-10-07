@@ -4,7 +4,6 @@ let corpora = [];
 let busy = false;
 
 const picked = (name) => document.querySelector(`input[name=${name}]:checked`)?.value;
-const corpusLabel = () => corpora.find((c) => c.name === picked("corpus"))?.label ?? "the corpus";
 
 async function load() {
   corpora = (await (await fetch("/api/info")).json()).corpora;
@@ -50,7 +49,7 @@ function renderAnswer(box, text, open) {
   }
 }
 
-function newTurn(question) {
+function newTurn(question, label) {
   const li = el("li", "turn");
   const answer = el("div", "a pending", "Checking…");
   answer.setAttribute("role", "status");
@@ -86,7 +85,7 @@ function newTurn(question) {
         answer.className = "a" + (ev.refused ? " refused" : "");
         if (!ev.refused) renderAnswer(answer, ev.text, open);
         else answer.textContent = ev.reason === "off_topic" ? "Not about machine learning, so I didn't look it up."
-          : `No passage in ${corpusLabel()} answered this (query rewritten twice).`;
+          : `No passage in the ${label.toLowerCase()} answered this (query rewritten twice).`;
       } else if (ev.type === "done") rows.append(el("li", "total", `total ${ev.seconds.toFixed(1)} s`));
       else if (ev.type === "error") this.error(ev.message);
       scroll();
@@ -99,7 +98,8 @@ async function send(question) {
   question = question.trim();
   if (!question || busy || !picked("corpus")) return;
   busy = true; $("#send").disabled = true; $("#welcome").hidden = true; $("#question").value = "";
-  const turn = newTurn(question);
+  const label = corpora.find((c) => c.name === picked("corpus")).label;
+  const turn = newTurn(question, label);
   try {
     const res = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question, mode: picked("mode"), corpus: picked("corpus") }) });

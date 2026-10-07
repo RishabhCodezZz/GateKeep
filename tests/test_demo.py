@@ -52,7 +52,7 @@ def test_events_come_in_order_and_end_with_answer_then_done():
     assert {g["gate"] for g in gates} == {"route", "grade", "grounded", "sufficient"} and all(g["who"] == "Laya" for g in gates)
 
 
-def test_fast_mode_never_asks_the_llm_to_judge_even_when_laya_is_unsure():
+def test_fast_mode_never_asks_the_llm_to_judge_when_laya_keeps_a_passage():
     llm = CountingLLM()
     evs = list(ask_events("what is bagging?", FakeIndex(), llm, laya(0.1), TAUS, "fast"))
     assert llm.gate_prompts == 0 and all(e["who"] == "Laya" for e in evs if e["type"] == "gate")
