@@ -33,9 +33,9 @@ def get(url, path):
     return urllib.request.urlopen(url + path, timeout=5)
 
 
-def post(url, body):
+def post(url, body, **headers):
     data = body if isinstance(body, bytes) else json.dumps(body).encode()
-    req = urllib.request.Request(url + "/api/ask", data=data, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(url + "/api/ask", data=data, headers={"Content-Type": "application/json", **headers})
     return urllib.request.urlopen(req, timeout=5)
 
 
@@ -51,6 +51,7 @@ def test_serves_the_page_and_its_files(url):
     assert page.headers["Content-Type"].startswith("text/html") and b"GateKeep" in page.read()
     assert get(url, "/static/app.js").headers["Content-Type"].startswith("text/javascript")
     assert status(get, url, "/static/../web.py") == 404 and status(get, url, "/static/nope.css") == 404
+    assert status(get, url, "/static/Z:app.js") == 404
 
 
 def test_info_lists_corpora_and_which_are_ready(url):
@@ -70,6 +71,7 @@ def test_ask_streams_json_lines_ending_in_done(url):
                                   {"question": "q", "mode": "turbo", "corpus": "book"},
                                   {"question": "q", "mode": "fast", "corpus": "sklearn"},
                                   {"question": "q", "mode": "fast", "corpus": "nope"},
+                                  {"question": "q", "mode": "fast", "corpus": ["book"]},
                                   {"mode": "fast"}, b"not json"])
 def test_bad_requests_get_400(url, body):
     assert status(post, url, body) == 400
@@ -78,3 +80,11 @@ def test_bad_requests_get_400(url, body):
 def test_a_failing_backend_becomes_an_error_event(url):
     events = [json.loads(line) for line in post(url, {"question": "boom", "mode": "careful", "corpus": "book"}).read().decode().splitlines()]
     assert events == [{"type": "error", "message": "RuntimeError: no network"}]
+
+
+def test_cross_site_and_rebinding_requests_get_403(url):
+    ok = {"question": "q", "mode": "fast", "corpus": "book"}
+    port = url.rsplit(":", 1)[1]
+    assert status(lambda: post(url, ok, **{"Content-Type": "text/plain"})) == 403
+    assert status(lambda: post(url, ok, Host=f"evil.example:{port}")) == 403
+    assert status(lambda: post(url, ok, Host=f"localhost:{port}")) == 200
