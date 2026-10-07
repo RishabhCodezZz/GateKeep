@@ -102,7 +102,9 @@ class LayaGate(Gate):
             a = r["answers"][gate]
             if GATES[gate]["q"]["type"] == "noul":
                 p = a["noul"]
-                out.append(("yes", p) if p >= 0.5 else ("no", 1 - p))
+                # Binning (calibration) is applied to answer_confidence only; use it for confidence
+                conf = a["answer_confidence"]
+                out.append(("yes", conf) if p >= 0.5 else ("no", conf))
             else:
                 out.append((a["choice"], a["answer_confidence"]))
         self.last_s = time.perf_counter() - t0

@@ -68,3 +68,28 @@ def test_laya_gate_load_rejects_a_folder_without_weights(tmp_path):
     (tmp_path / "route").mkdir()  # the folder exists (e.g. a restored ckpts.json) but the 3 GB of weights did not travel
     with pytest.raises(FileNotFoundError, match="model.safetensors"):
         LayaGate.load({"route": (str(tmp_path / "route"), None)})
+
+
+class FakeLaya:
+    """Fake Laya agent for testing; predict_batch returns fixed results."""
+    def __init__(self, results):
+        self.results = results  # list of dicts with the structure predict_batch returns
+
+    def predict_batch(self, states, questions, batch_size=64):
+        return self.results
+
+
+def test_laya_gate_noul_takes_calibrated_answer_confidence():
+    """When answer_confidence is binned (calibrated), noul gates should use it for confidence, not the raw noul value."""
+    from gatekeep.gates import LayaGate
+    fake = FakeLaya([{"answers": {"grade": {"noul": 0.8, "answer_confidence": 0.62}}}])
+    gate = LayaGate({"grade": fake})
+    assert gate.decide_many("grade", ["x"]) == [("yes", 0.62)]
+
+
+def test_laya_gate_noul_label_from_raw_noul_confidence_from_binned():
+    """Confirm the label comes from raw noul but confidence from answer_confidence."""
+    from gatekeep.gates import LayaGate
+    fake = FakeLaya([{"answers": {"grade": {"noul": 0.3, "answer_confidence": 0.55}}}])
+    gate = LayaGate({"grade": fake})
+    assert gate.decide_many("grade", ["x"]) == [("no", 0.55)]
