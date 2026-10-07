@@ -285,16 +285,16 @@ def validate_grader(n="200"):
 
 
 @command
-def prepare_dir(folder):
-    """Parse every .html in a folder; chapter = file name. Writes data/chunks.json."""
+def prepare_dir(folder, out="data/chunks.json"):
+    """Parse every .html in a folder; chapter = file name. Writes the chunks to `out` (default data/chunks.json)."""
     from gatekeep import corpus
-    out = []
+    chunks = []
     for p in sorted(Path(folder).glob("*.html")):
         for c in corpus.chunk(corpus.parse(str(p)), tag=p.stem):
-            out.append({**c, "id": len(out)})
-    Path("data").mkdir(exist_ok=True)
-    json.dump(out, open("data/chunks.json", "w"))
-    print(len(out), "chunks from", len({c["chapter"] for c in out}), "pages")
+            chunks.append({**c, "id": len(chunks)})
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    json.dump(chunks, open(out, "w"))
+    print(len(chunks), "chunks from", len({c["chapter"] for c in chunks}), "pages ->", out)
 
 
 @command
@@ -333,6 +333,49 @@ def token_check():
     for p in sorted(Path("data/gates").glob("*_train.jsonl")):
         n = [len(tok(r["text"]).input_ids) for r in read_rows(p)]
         print(f"{p.stem:20s} over 768: {sum(x > 768 for x in n) / len(n):.1%} | longest {max(n)}")
+
+
+WEB_CORPORA = {  # name: (label, chunks file, how to prepare it, example questions)
+    "book": ("Book", "data/chunks.json", "python -m gatekeep.cli prepare <your copy of the book>.pdf",
+             ["What is the difference between bagging and boosting?",
+              "Why do we scale features before training an SVM?",
+              "What does the learning rate do in gradient descent?"]),
+    "sklearn": ("scikit-learn docs", "data/sk/chunks.json",
+                "python scripts/fetch_sklearn_docs.py, then python -m gatekeep.cli prepare_dir data/sk data/sk/chunks.json",
+                ["What is the difference between bagging and boosting?",
+                 "How is the silhouette coefficient used to evaluate clustering?",
+                 "How do I fine-tune a large language model with LoRA?"]),
+}
+
+
+@command
+def web(port="8000"):
+    """Local web app on http://127.0.0.1:<port>: Fast (all Laya) or Careful (Laya, then Gemma), book or scikit-learn docs."""
+    import webbrowser
+    from gatekeep import demo
+    from gatekeep.corpus import Index
+    from gatekeep.gates import LayaGate
+    from gatekeep.llm import LLM
+    from gatekeep.web import make_server
+    for f, fix in (("models/ckpts.json", "copy notebook 10's models/ folder into the project"),
+                   ("results/tau.json", "it comes from the evaluation run (notebook 11)")):
+        if not Path(f).exists():
+            raise SystemExit(f"{f} is missing: {fix}")
+    llm, taus = LLM(), json.load(open("results/tau.json"))
+    laya = LayaGate.load(json.load(open("models/ckpts.json")))  # names any missing weights or calibration file
+    corpora = {}
+    for name, (label, path, prepare, examples) in WEB_CORPORA.items():
+        print("building the", label, "index" if Path(path).exists() else "index: skipped, not prepared")
+        corpora[name] = {"label": label, "prepare": prepare, "examples": examples,
+                         "index": Index(load_chunks(path), device="cpu") if Path(path).exists() else None}
+    srv = make_server(corpora, lambda q, index, mode: demo.ask_events(q, index, llm, laya, taus, mode), int(port))
+    url = f"http://127.0.0.1:{srv.server_address[1]}"
+    print("GateKeep is running at", url, "(Ctrl+C to stop)")
+    webbrowser.open(url)
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
 
 
 # --- new commands go above this line ---

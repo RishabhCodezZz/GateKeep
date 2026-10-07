@@ -59,13 +59,14 @@ def chunk(doc, max_tokens=MAX_TOK, tag=None, starts=None):
 
 
 class Index:
-    def __init__(self, chunks):
+    def __init__(self, chunks, device=None):
+        """device=None picks the GPU when there is one; the web app passes "cpu" to leave the 4 GB GPU to the Laya gates."""
         import faiss
         import numpy as np
         from sentence_transformers import CrossEncoder, SentenceTransformer
         self.chunks = chunks
-        self.emb = SentenceTransformer(EMB)
-        self.rr = CrossEncoder(RERANK)
+        self.emb = SentenceTransformer(EMB, device=device)
+        self.rr = CrossEncoder(RERANK, device=device)
         v = self.emb.encode([c["ctx"] for c in chunks], normalize_embeddings=True, batch_size=64)
         self.ix = faiss.IndexFlatIP(v.shape[1])
         self.ix.add(np.asarray(v, dtype="float32"))
