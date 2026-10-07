@@ -4,6 +4,7 @@ from collections import Counter
 from pathlib import Path
 
 COMMANDS = {}
+TAU_FLOOR = 0.90  # a cascade threshold aims at least this high, whatever the LLM judge scores on dev
 
 
 def _usage():
@@ -236,7 +237,7 @@ def evalgates(backends="llm,sklearn"):
                   f"let-through (recall of yes) {ty} | recall per label: {per} | p50 {r['p50_ms']:.1f} ms")
         if tuned:  # cascade threshold: smallest tau where Laya's accepted dev decisions match the LLM judge's dev accuracy
             target = res[("llm", "dev")]["acc"] if "llm" in wanted else eg.dev_acc_from_csv("results/gates.csv", gate, "llm")
-            taus[gate] = pick_tau(res[("laya-ft", "dev")]["conf"], res[("laya-ft", "dev")]["ok"], target=target)
+            taus[gate] = pick_tau(res[("laya-ft", "dev")]["conf"], res[("laya-ft", "dev")]["ok"], target=target, floor=TAU_FLOOR)
             print(gate, "tau =", taus[gate])
     eg.save_rows("results/gates.csv", header, new_rows)  # replaces earlier rows for the same gate/backend/split
     if taus:
@@ -292,6 +293,44 @@ def prepare_dir(folder):
     Path("data").mkdir(exist_ok=True)
     json.dump(out, open("data/chunks.json", "w"))
     print(len(out), "chunks from", len({c["chapter"] for c in out}), "pages")
+
+
+@command
+def calibrate():
+    """Refit each fine-tuned gate's temperatures on the dev split (never trained on), add histogram binning
+    where a bucket has enough rows (laya needs 200), save models/<gate>/calibration.json, update models/ckpts.json."""
+    import laya
+    from laya.calibrate import records_from_labeled
+    from gatekeep.data import target_vector
+    from gatekeep.gates import GATES
+    ck = json.load(open("models/ckpts.json"))
+    for gate, (path, _) in ck.items():
+        agent = laya.load(path)
+        rows = read_rows(f"data/gates/{gate}_dev.jsonl")
+        recs = records_from_labeled(agent, [({"body": r["text"]}, {gate: GATES[gate]["q"]},
+                                             {gate: target_vector(gate, r["label"])}) for r in rows])
+        temps = agent.fit_temperatures(recs)["temperature"]
+        binned = sorted(agent.fit_binning(recs))
+        cal = f"{path}/calibration.json"
+        agent.save_calibration(cal)
+        ck[gate] = [path, cal]
+        print(f"{gate:10s} {len(recs)} dev rows | temperatures {[round(t, 3) for t in temps]} | binned buckets {binned}")
+    json.dump(ck, open("models/ckpts.json", "w"))
+
+
+@command
+def token_check(budget="768"):
+    """Share of each gate's rows longer than Laya's state budget (max_len 1024 minus 256 for the question)."""
+    import os
+    from huggingface_hub import snapshot_download
+    from laya.agent import _fix_tokenizer_config  # notebook 04 does the same before loading the tokenizer
+    from transformers import AutoTokenizer
+    model_dir = snapshot_download("convaiinnovations/laya", allow_patterns=["tokenizer/*", "*.json"])
+    _fix_tokenizer_config(model_dir)
+    tok = AutoTokenizer.from_pretrained(os.path.join(model_dir, "tokenizer"))
+    for p in sorted(Path("data/gates").glob("*_train.jsonl")):
+        n = [len(tok(r["text"]).input_ids) for r in read_rows(p)]
+        print(f"{p.stem:20s} over {budget}: {sum(x > int(budget) for x in n) / len(n):.1%} | longest {max(n)}")
 
 
 # --- new commands go above this line ---

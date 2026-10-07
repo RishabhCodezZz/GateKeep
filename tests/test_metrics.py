@@ -41,3 +41,10 @@ def test_macro_f1_perfect():
 def test_ece_ignores_unparsed_replies_with_zero_confidence():
     # a reply that could not be parsed carries confidence 0 and falls outside every bin
     assert ece([1.0, 1.0, 0.0, 0.0], [1, 1, 0, 0]) == 0
+
+
+def test_pick_tau_never_aims_below_the_floor():
+    conf = [0.55, 0.6, 0.7, 0.8, 0.9, 0.95]
+    ok = [0, 1, 0, 1, 1, 1]
+    assert pick_tau(conf, ok, target=0.6) == 0.5             # matching a weak judge accepts everything
+    assert pick_tau(conf, ok, target=0.6, floor=0.9) == 0.71  # the floor forces a real threshold
