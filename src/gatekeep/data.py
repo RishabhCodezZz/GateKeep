@@ -127,27 +127,28 @@ def g4_rows(llm, items, by_id, seed=0):
     return rows
 
 
-def gold_for(gate, label):
-    """The training target Laya's official fine-tuning notebook reads: a probability per option
-    ("true"/"false" for yes/no gates, one entry per criterion for the route gate)."""
+SMOOTH = 0.1  # the official recipe trains on probabilities; v1's hard 1/0 targets made grade and sufficient overconfident
+
+
+def _options(gate):
     q = GATES[gate]["q"]
-    if q["type"] == "noul":
-        return {"probabilities": {"true": float(label == "yes"), "false": float(label != "yes")}}
-    return {"probabilities": {k: float(k == label) for k in q["criteria"]}}
+    return ["false", "true"] if q["type"] == "noul" else list(q["criteria"])
 
 
-def balance_rows(rows, min_share=0.25):
-    """Repeat the rarer labels until each has at least min_share of the most common label's count (training rows only)."""
-    by_label = {}
-    for r in rows:
-        by_label.setdefault(r["label"], []).append(r)
-    top = max(len(v) for v in by_label.values())
-    want = round(top * min_share)
-    out = list(rows)
-    for v in by_label.values():
-        if len(v) < want:
-            out += [v[i % len(v)] for i in range(want - len(v))]
-    return out
+def _hit(gate, label):
+    return {"yes": "true", "no": "false"}.get(label, label) if GATES[gate]["q"]["type"] == "noul" else label
+
+
+def gold_for(gate, label, smooth=SMOOTH):
+    """The training target Laya's official fine-tuning notebook reads: a probability per option."""
+    keys, hit = _options(gate), _hit(gate, label)
+    return {"probabilities": {k: round(1 - smooth if k == hit else smooth / (len(keys) - 1), 6) for k in keys}}
+
+
+def target_vector(gate, label):
+    """One-hot target in Laya's option order, for calibration records."""
+    hit = _hit(gate, label)
+    return [float(k == hit) for k in _options(gate)]
 
 
 def write_gate_data(rows_by_gate, split, outdir="data/gates"):

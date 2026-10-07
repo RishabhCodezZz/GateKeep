@@ -18,22 +18,20 @@ class FakeLLM:
         return "YES" if "Reply YES or NO" in prompt else "an altered answer"
 
 
-def test_gold_for_encodes_the_probabilities_laya_trains_on():
-    assert data.gold_for("grade", "yes") == {"probabilities": {"true": 1.0, "false": 0.0}}
-    assert data.gold_for("grade", "no") == {"probabilities": {"true": 0.0, "false": 1.0}}
-    assert data.gold_for("route", "direct") == {"probabilities": {"retrieve": 0.0, "direct": 1.0, "off_topic": 0.0}}
+def test_gold_for_gives_soft_probabilities_like_the_official_recipe():
+    assert data.gold_for("grade", "yes") == {"probabilities": {"true": 0.9, "false": 0.1}}
+    assert data.gold_for("grade", "no") == {"probabilities": {"true": 0.1, "false": 0.9}}
+    p = data.gold_for("route", "direct")["probabilities"]
+    assert p["direct"] == 0.9 and p["retrieve"] == p["off_topic"] == 0.05
 
 
-def test_balance_rows_repeats_minority_classes_up_to_a_share_of_the_majority():
-    from collections import Counter
-    rows = [{"text": str(i), "label": "a"} for i in range(100)] + [{"text": "x", "label": "b"}] * 7
-    counts = Counter(r["label"] for r in data.balance_rows(rows, min_share=0.25))
-    assert counts["a"] == 100 and counts["b"] == 25
+def test_target_vector_is_one_hot_in_lay_option_order():
+    assert data.target_vector("grade", "yes") == [0.0, 1.0]   # noul options are [false, true]
+    assert data.target_vector("route", "off_topic") == [0.0, 0.0, 1.0]  # criteria order
 
 
-def test_balance_rows_leaves_a_balanced_set_alone():
-    rows = [{"text": "1", "label": "a"}, {"text": "2", "label": "b"}]
-    assert data.balance_rows(rows) == rows
+def test_balance_rows_is_gone():
+    assert not hasattr(data, "balance_rows")  # copies leaked into the calibration slice in v1
 
 
 def test_g1_sends_every_book_question_to_retrieval_and_adds_the_new_classes():

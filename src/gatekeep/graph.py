@@ -7,7 +7,7 @@ from langgraph.graph import END, StateGraph
 from gatekeep.llm import GEMMA
 
 REFUSAL = "I can't answer that from this book."
-EVIDENCE_CHARS = 1200  # Laya reads ~512 tokens: evidence + answer must fit
+EVIDENCE_CHARS = 2000  # fine-tuned checkpoints read 1,024 tokens (768 for the state): ~500 for evidence, the rest for the answer
 
 
 class S(TypedDict, total=False):

@@ -118,3 +118,10 @@ def test_agents_graph_refuses_when_nothing_relevant():
     r = build_agents_graph(FakeIndex(), FakeLLM(),
                            gates(lambda g, t: ("retrieve", 1.0) if g == "route" else ("no", 1.0))).invoke({"q": "x"})
     assert r["answer"] == REFUSAL
+
+
+def test_evidence_uses_the_fine_tuned_window():
+    from gatekeep.graph import EVIDENCE_CHARS, evidence
+    assert EVIDENCE_CHARS == 2000
+    docs = [{"text": "a" * 900}, {"text": "b" * 900}, {"text": "c" * 900}]
+    assert len(evidence(docs)) == 900 + 2 + 900  # two whole passages fit, the third would pass 2,000
