@@ -18,3 +18,4 @@ notebooks/*_output.ipynb
 # generated answers and questions are derived from the book
 results/*rows*.jsonl
 .claude/
+.superpowers/
