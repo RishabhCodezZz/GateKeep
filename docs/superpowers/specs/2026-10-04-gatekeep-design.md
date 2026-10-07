@@ -86,3 +86,13 @@ The public Kaggle demo notebook is deferred at the author's request. Readers can
 ## Open items
 
 Injection-shield gate stays a stretch goal for the buffer weeks.
+
+## v2 addendum (2026-10-07, written before any v2 run)
+
+v1 found five mistakes: a router asked to judge book coverage from the question alone, trained on 48 out-of-scope questions about 6 topics; copied rows that leaked into the calibration slice; hard 0/1 targets; a router threshold of 0.5 that never consulted Gemma; and a 1,200-character evidence cap on checkpoints that read 1,024 tokens. v2 fixes all five (see `docs/superpowers/plans/2026-10-07-gatekeep-v2.md`).
+
+Criteria, fixed now:
+1. Primary, unchanged from v1: V3 correctness within 2.5 points of V1 and at least 5x fewer gate-level LLM calls than V1, on the same 343-question test set.
+2. Router: on the route test split, recall of `retrieve` is at least 0.97 and recall of `off_topic` at least 0.80.
+3. Fewer wrong refusals: V3 refuses at most 10 of the 311 answerable test questions (v1: 19).
+v1 results stay in `results/v1/` and are reported next to v2, whatever v2 shows.
