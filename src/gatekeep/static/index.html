@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GateKeep</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&family=Kalam:wght@400;700&display=swap">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<aside class="sidebar">
+  <h1 class="brand">GateKeep</h1>
+  <fieldset class="switch" id="corpus"><legend>Answer from</legend></fieldset>
+  <fieldset class="switch" id="mode"><legend>Mode</legend>
+    <label><input type="radio" name="mode" value="fast" checked> Fast (Laya)</label>
+    <label><input type="radio" name="mode" value="careful"> Careful (Laya + Gemma)</label>
+  </fieldset>
+  <button type="button" id="new-chat" class="secondary">New chat</button>
+  <p class="note">Each question is answered on its own.</p>
+  <p class="note small">Careful makes about 8 Gemma calls per answer, Fast about 1.5.</p>
+</aside>
+<main>
+  <section id="welcome" class="welcome">
+    <h2>What would you like to know?</h2>
+    <svg class="underline" viewBox="0 0 300 14" aria-hidden="true"><path d="M4 9 C 70 3, 150 13, 296 6"/></svg>
+    <div id="examples" class="examples"></div>
+  </section>
+  <ol id="chat" class="chat" aria-live="polite"></ol>
+  <form id="ask" class="composer">
+    <textarea id="question" rows="2" placeholder="Ask about machine learning" aria-label="Your question"></textarea>
+    <button type="submit" id="send">Send</button>
+  </form>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>
