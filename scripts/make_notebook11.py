@@ -24,21 +24,17 @@ clone = find('git", "clone"')
 pip, smi, secret = find("pip install"), find("nvidia-smi"), find("UserSecretsClient")
 restore, weights = find("from gatekeep.restore import restore"), find("fine-tuned weights missing")
 
+# Fix weights cell: replace "notebook 04" with "notebook 10"
+weights_src = "".join(weights["source"])
+weights_src = weights_src.replace("notebook 04", "notebook 10")
+weights["source"] = weights_src.splitlines(True)
+
 OLD = '["git", "clone", "https://github.com/RishabhCodezZz/GateKeep.git"]'
 NEW = '["git", "clone", "-b", "v2", "https://github.com/RishabhCodezZz/GateKeep.git"]'
 joined = "".join(clone["source"])
 assert OLD in joined, "clone command not found in notebook 08"
 clone["source"] = joined.replace(OLD, NEW).splitlines(True)
 
-ood = code('''if not os.path.isdir("data_book"): shutil.move("data", "data_book"); os.mkdir("data")
-try:
-    for cmd in (["python", "scripts/fetch_sklearn_docs.py"],
-                ["python", "-m", "gatekeep.cli", "prepare_dir", "data/sk"],
-                ["python", "-m", "gatekeep.cli", "questions", "0", "0", "200"],
-                ["python", "-m", "gatekeep.cli", "variants", "V1,V3", "", "results/tau.json", "0", "ood_"]):
-        print(subprocess.run(cmd, capture_output=True, text=True).stdout[-3000:])
-finally:
-    shutil.rmtree("data"); shutil.move("data_book", "data")   # always put the book's data back''')
 
 out = dict(src)
 out["cells"] = [
@@ -56,7 +52,18 @@ out["cells"] = [
     code('!python -m gatekeep.cli variants V1,V3 "" results/tau.json 0 hw_ data/handwritten.jsonl'),
     md("## 7 · breakdown, verdict and plots"),
     code("!python -m gatekeep.cli breakdown\n!python -m gatekeep.cli report"),
-    md("## 8 · scikit-learn docs (out of distribution)"), ood,
+    md("## 8 · scikit-learn docs (out of distribution)"),
+    code('''if not os.path.isdir("data_book"): shutil.move("data", "data_book"); os.mkdir("data")
+try:
+    for cmd in (["python", "scripts/fetch_sklearn_docs.py"],
+                ["python", "-m", "gatekeep.cli", "prepare_dir", "data/sk"],
+                ["python", "-m", "gatekeep.cli", "questions", "0", "0", "200"],
+                ["python", "-m", "gatekeep.cli", "variants", "V1,V3", "", "results/tau.json", "0", "ood_"]):
+        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(r.stdout[-3000:])
+        assert r.returncode == 0, cmd
+finally:
+    shutil.rmtree("data"); shutil.move("data_book", "data")   # always put the book's data back'''),
     md("## 9 · back up"),
     code("!cd /kaggle/working/GateKeep && zip -rq /kaggle/working/gatekeep_backup.zip data cache results "
          "models/ckpts.json models/*/calibration.json && ls -lh /kaggle/working/gatekeep_backup.zip"),
