@@ -19,3 +19,4 @@ notebooks/*_output.ipynb
 results/**/*rows*.jsonl
 .claude/
 .superpowers/
+gates_v2.zip
