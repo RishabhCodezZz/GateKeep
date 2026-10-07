@@ -20,10 +20,13 @@ class Recorder(Gate):
         return out
 
 
+def who(e):
+    return "Laya" if not e["escalated"] else f"Laya, then Gemma for {e['escalated']} of {e['n']}"
+
+
 def gate_line(e):
-    who = "Laya" if not e["escalated"] else f"Laya, then Gemma for {e['escalated']} of {e['n']}"
     labels = e["labels"][0] if e["n"] == 1 else f"{e['labels'].count('yes')} of {e['n']} yes"
-    return f"   {e['gate']}: {labels} ({who}, {e['ms']} ms)"
+    return f"   {e['gate']}: {labels} ({e['who']}, {e['ms']} ms)"
 
 
 def describe(node, out):
@@ -44,22 +47,49 @@ def describe(node, out):
     return node
 
 
-def ask(question, index, llm, laya, taus, source="the scikit-learn user guide"):
-    """Run one question through the V3 cascade. Returns (answer, trace lines, passages, seconds)."""
-    log = []
-    gates = {g: Recorder(Cascade(laya, LLMGate(llm), taus[g]), log) for g in GATES}
-    app = build_graph(index, llm, gates)
-    trace, docs, answer, t0 = [], [], "", time.perf_counter()
+def _gates(mode, laya, llm, taus, log):
+    if mode == "fast":   # V2: every gate by Laya
+        return {g: Recorder(laya, log) for g in GATES}
+    if mode == "careful":  # V3: Laya first, Gemma when Laya is unsure
+        return {g: Recorder(Cascade(laya, LLMGate(llm), taus[g]), log) for g in GATES}
+    raise ValueError(f"unknown mode {mode!r}: use 'fast' or 'careful'")
+
+
+def ask_events(question, index, llm, laya, taus, mode="careful"):
+    """Run one question and yield what happens, step by step, for the trace and the web app."""
+    log, t0 = [], time.perf_counter()
+    app = build_graph(index, llm, _gates(mode, laya, llm, taus, log))
+    docs, answer, route = [], "", None
     for update in app.stream({"q": question}, stream_mode="updates"):
         for node, out in update.items():
-            trace.append(describe(node, out))
-            trace += [gate_line(e) for e in log]
+            yield {"type": "step", "node": node, "text": describe(node, out)}
+            for e in log:
+                yield {"type": "gate", "gate": e["gate"], "labels": e["labels"], "n": e["n"], "who": who(e), "ms": e["ms"]}
             log.clear()
-            docs = out.get("docs", docs)
-            answer = out.get("answer", answer)
-    if answer == REFUSAL:  # the pipeline's fixed message says "this book"; name the corpus the app actually uses
-        answer = f"I can't answer that from {source}."
-    return answer, trace, [d["text"] for d in docs], time.perf_counter() - t0
+            docs, answer, route = out.get("docs", docs), out.get("answer", answer), out.get("route", route)
+    refused = answer == REFUSAL
+    yield {"type": "passages", "items": [{"text": d["text"], "section": d.get("section", ""), "page": d.get("page")}
+                                         for d in ([] if refused else docs)]}
+    yield {"type": "answer", "text": answer, "refused": refused,
+           "reason": ("off_topic" if route == "off_topic" else "no_passage") if refused else None}
+    yield {"type": "done", "seconds": round(time.perf_counter() - t0, 2)}
+
+
+def ask(question, index, llm, laya, taus, source="the scikit-learn user guide"):
+    """Run one question through the V3 cascade. Returns (answer, trace lines, passages, seconds)."""
+    trace, passages, answer, secs = [], [], "", 0.0
+    for ev in ask_events(question, index, llm, laya, taus, "careful"):
+        if ev["type"] == "step":
+            trace.append(ev["text"])
+        elif ev["type"] == "gate":
+            trace.append(gate_line(ev))
+        elif ev["type"] == "passages":
+            passages = [p["text"] for p in ev["items"]]
+        elif ev["type"] == "answer":  # the pipeline's fixed refusal says "this book"; name the corpus the app uses
+            answer = f"I can't answer that from {source}." if ev["refused"] else ev["text"]
+        elif ev["type"] == "done":
+            secs = ev["seconds"]
+    return answer, trace, passages, secs
 
 
 def launch(index, llm, laya, taus, examples=(), source="the scikit-learn user guide"):
