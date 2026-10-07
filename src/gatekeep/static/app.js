@@ -19,6 +19,11 @@ async function load() {
   }
   box.addEventListener("change", showExamples);
   showExamples();
+  if (!first) {
+    $("#send").disabled = true;
+    const examplesBox = $("#examples");
+    examplesBox.replaceChildren(el("p", "note", "No corpus is ready yet. Prepare one with the command shown in the sidebar."));
+  }
 }
 
 function showExamples() {
@@ -38,7 +43,7 @@ function renderAnswer(box, text, open) {
     const p = el("p");
     for (const part of para.split(/(\[\d+\])/)) {
       const m = part.match(/^\[(\d+)\]$/);
-      if (m) { const b = el("button", "cite", part); b.type = "button"; b.onclick = () => open(Number(m[1]) - 1); p.append(b); }
+      if (m) { const b = el("button", "cite", part); b.type = "button"; b.setAttribute("aria-label", "Source " + m[1]); b.onclick = () => open(Number(m[1]) - 1); p.append(b); }
       else p.append(part);
     }
     box.append(p);
@@ -48,6 +53,7 @@ function renderAnswer(box, text, open) {
 function newTurn(question) {
   const li = el("li", "turn");
   const answer = el("div", "a pending", "Checking…");
+  answer.setAttribute("role", "status");
   const chips = el("div", "chips");
   const trace = el("details", "trace");
   trace.open = true;
@@ -58,9 +64,9 @@ function newTurn(question) {
   $("#chat").append(li);
   let items = [];
   const open = (i) => {
-    li.querySelector(".passage")?.remove();
     const p = items[i];
     if (!p) return;
+    li.querySelector(".passage")?.remove();
     const box = el("div", "passage");
     box.append(el("span", "meta", [p.section, p.page != null ? "page " + p.page : ""].filter(Boolean).join(" · ") || "passage " + (i + 1)), p.text);
     chips.after(box);
@@ -75,7 +81,7 @@ function newTurn(question) {
         rows.append(row);
       } else if (ev.type === "passages") {
         items = ev.items;
-        items.forEach((_, i) => { const b = el("button", "", `[${i + 1}]`); b.type = "button"; b.onclick = () => open(i); chips.append(b); });
+        items.forEach((_, i) => { const b = el("button", "", `[${i + 1}]`); b.type = "button"; b.setAttribute("aria-label", "Source " + (i + 1)); b.onclick = () => open(i); chips.append(b); });
       } else if (ev.type === "answer") {
         answer.className = "a" + (ev.refused ? " refused" : "");
         if (!ev.refused) renderAnswer(answer, ev.text, open);
@@ -85,7 +91,7 @@ function newTurn(question) {
       else if (ev.type === "error") this.error(ev.message);
       scroll();
     },
-    error(msg) { answer.classList.remove("pending"); li.append(el("p", "error", "Something went wrong: " + msg)); scroll(); },
+    error(msg) { answer.textContent = ""; answer.hidden = true; answer.classList.remove("pending"); li.append(el("p", "error", "Something went wrong: " + msg)); scroll(); },
   };
 }
 
@@ -106,16 +112,17 @@ async function send(question) {
       if (done) break;
       buf += dec.decode(value, { stream: true });
       let i;
-      while ((i = buf.indexOf("\n")) >= 0) { turn.event(JSON.parse(buf.slice(0, i))); buf = buf.slice(i + 1); }
+      while ((i = buf.indexOf("\n")) >= 0) { const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1); if (line) turn.event(JSON.parse(line)); }
     }
+    if (buf.trim()) turn.event(JSON.parse(buf));
   } catch (e) {
     turn.error(String(e));
   } finally {
-    busy = false; $("#send").disabled = false; $("#question").focus();
+    busy = false; $("#send").disabled = !picked("corpus"); $("#question").focus();
   }
 }
 
 $("#ask").addEventListener("submit", (e) => { e.preventDefault(); send($("#question").value); });
-$("#question").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send($("#question").value); } });
+$("#question").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send($("#question").value); } });
 $("#new-chat").addEventListener("click", () => { if (!busy) { $("#chat").replaceChildren(); $("#welcome").hidden = false; } });
 load();
