@@ -44,7 +44,7 @@ def describe(node, out):
     return node
 
 
-def ask(question, index, llm, laya, taus):
+def ask(question, index, llm, laya, taus, source="the scikit-learn user guide"):
     """Run one question through the V3 cascade. Returns (answer, trace lines, passages, seconds)."""
     log = []
     gates = {g: Recorder(Cascade(laya, LLMGate(llm), taus[g]), log) for g in GATES}
@@ -57,16 +57,16 @@ def ask(question, index, llm, laya, taus):
             log.clear()
             docs = out.get("docs", docs)
             answer = out.get("answer", answer)
-    if answer == REFUSAL:  # the pipeline's fixed message says "book"; this demo answers from the scikit-learn user guide
-        answer = "I can't answer that from the scikit-learn user guide."
+    if answer == REFUSAL:  # the pipeline's fixed message says "this book"; name the corpus the app actually uses
+        answer = f"I can't answer that from {source}."
     return answer, trace, [d["text"] for d in docs], time.perf_counter() - t0
 
 
-def launch(index, llm, laya, taus, examples=()):
+def launch(index, llm, laya, taus, examples=(), source="the scikit-learn user guide"):
     import gradio as gr
 
     def run(question):
-        answer, trace, passages, secs = ask(question, index, llm, laya, taus)
+        answer, trace, passages, secs = ask(question, index, llm, laya, taus, source)
         shown = "\n\n".join(f"[{i + 1}] {p}" for i, p in enumerate(passages)) or "(no passage was kept)"
         return answer, "\n".join(trace) + f"\n\ntotal {secs:.1f} s", shown
 
@@ -75,4 +75,4 @@ def launch(index, llm, laya, taus, examples=()):
                   gr.Textbox(label="Passages the answer was based on", lines=10)],
                  examples=[[e] for e in examples], title="GateKeep",
                  description="Fine-tuned Laya makes the gate decisions; Gemma steps in when Laya is unsure. "
-                             "Answers come from the scikit-learn user guide.").launch(share=True)
+                             f"Answers come from {source}.").launch(share=True)
