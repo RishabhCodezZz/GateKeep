@@ -30,7 +30,7 @@ check("ultra", lambda: say(ULTRA))
 
 
 def quota_probe(n=20):
-    """How much free quota do n distinct short Nemotron calls use? Too small to move the 3-decimal meter; scripts/quota_probe.py does the real measurement."""
+    """How much free quota do n distinct short Nemotron calls use? Too small to move the 3-decimal meter, so treat it as a rough check."""
     before = ollama_usage()
     t0 = time.time()
     for i in range(n):

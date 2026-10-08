@@ -1,4 +1,4 @@
-"""Interactive demo: ask a question and watch the route, the passages kept, each gate decision and the answer."""
+"""Run one question through the gates and yield each step as an event, for the trace and the web app."""
 import time
 
 from gatekeep.gates import GATES, Cascade, Gate, LLMGate
@@ -27,7 +27,7 @@ LENIENT_GRADE = "Does the passage help answer any part of the question, even if 
 class AllNoFallback(Gate):
     """Fast mode's grade gate: Laya decides, but when it rejects every passage Gemma re-checks them once.
     Laya's grade gate learned "this passage alone answers the question", so it rejects every passage of a broad
-    or comparison question; the measured V2 has no such fallback (see README)."""
+    or comparison question; the measured V2 has no such fallback (see docs/RESULTS.md)."""
     def __init__(self, fast, slow):
         self.fast, self.slow, self.escalated = fast, slow, 0
 
@@ -42,11 +42,6 @@ class AllNoFallback(Gate):
 
 def who(e):
     return "Laya" if not e["escalated"] else f"Laya, then Gemma for {e['escalated']} of {e['n']}"
-
-
-def gate_line(e):
-    labels = e["labels"][0] if e["n"] == 1 else f"{e['labels'].count('yes')} of {e['n']} yes"
-    return f"   {e['gate']}: {labels} ({e['who']}, {e['ms']} ms)"
 
 
 def describe(node, out):
@@ -119,36 +114,3 @@ def auto_events(question, index, llm, laya, taus):
         yield from live(ask_events(question, index, llm, laya, taus, "careful"))
     yield from held[:2]
     yield {"type": "done", "seconds": round(time.perf_counter() - t0, 2)}
-
-
-def ask(question, index, llm, laya, taus, source="the scikit-learn user guide"):
-    """Run one question through the V3 cascade. Returns (answer, trace lines, passages, seconds)."""
-    trace, passages, answer, secs = [], [], "", 0.0
-    for ev in ask_events(question, index, llm, laya, taus, "careful"):
-        if ev["type"] == "step":
-            trace.append(ev["text"])
-        elif ev["type"] == "gate":
-            trace.append(gate_line(ev))
-        elif ev["type"] == "passages":
-            passages = [p["text"] for p in ev["items"]]
-        elif ev["type"] == "answer":  # the pipeline's fixed refusal says "this book"; name the corpus the app uses
-            answer = f"I can't answer that from {source}." if ev["refused"] else ev["text"]
-        elif ev["type"] == "done":
-            secs = ev["seconds"]
-    return answer, trace, passages, secs
-
-
-def launch(index, llm, laya, taus, examples=(), source="the scikit-learn user guide"):
-    import gradio as gr
-
-    def run(question):
-        answer, trace, passages, secs = ask(question, index, llm, laya, taus, source)
-        shown = "\n\n".join(f"[{i + 1}] {p}" for i, p in enumerate(passages)) or "(no passage was kept)"
-        return answer, "\n".join(trace) + f"\n\ntotal {secs:.1f} s", shown
-
-    gr.Interface(run, gr.Textbox(label="Your question", lines=2),
-                 [gr.Textbox(label="Answer"), gr.Textbox(label="What the gates did", lines=14),
-                  gr.Textbox(label="Passages the answer was based on", lines=10)],
-                 examples=[[e] for e in examples], title="GateKeep",
-                 description="Fine-tuned Laya makes the gate decisions; Gemma steps in when Laya is unsure. "
-                             f"Answers come from {source}.").launch(share=True)

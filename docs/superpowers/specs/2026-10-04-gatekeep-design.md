@@ -89,7 +89,7 @@ Injection-shield gate stays a stretch goal for the buffer weeks.
 
 ## v2 addendum (2026-10-07, written before any v2 run)
 
-v1 found five mistakes: a router asked to judge book coverage from the question alone, trained on 48 out-of-scope questions about 6 topics; copied rows that leaked into the calibration slice; hard 0/1 targets; a router threshold of 0.5 that never consulted Gemma; and a 1,200-character evidence cap on checkpoints that read 1,024 tokens. v2 fixes all five (see `docs/superpowers/plans/2026-10-07-gatekeep-v2.md`).
+v1 found five mistakes: a router asked to judge book coverage from the question alone, trained on 48 out-of-scope questions about 6 topics; copied rows that leaked into the calibration slice; hard 0/1 targets; a router threshold of 0.5 that never consulted Gemma; and a 1,200-character evidence cap on checkpoints that read 1,024 tokens. v2 fixes all five (see docs/RESULTS.md).
 
 Criteria, fixed now:
 1. Primary, unchanged from v1: V3 correctness within 2.5 points of V1 and at least 5x fewer gate-level LLM calls than V1, on the same 343-question test set.

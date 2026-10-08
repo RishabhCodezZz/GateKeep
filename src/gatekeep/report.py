@@ -1,4 +1,4 @@
-"""Reading the results: where a variant wins or loses, in numbers (verdict and plots are added in Task 10)."""
+"""Reading the results: where a variant wins or loses, in numbers, plus the verdict and plots."""
 import matplotlib
 
 matplotlib.use("Agg")

@@ -1,4 +1,0 @@
-{"id": "hw-0", "q": "Why does the precision/recall trade-off matter when choosing a classification threshold?", "a": "Raising the threshold increases precision but lowers recall, so the threshold is chosen by which kind of error costs more.", "gold": [], "chapter": "hand", "answerable": true, "src": "hand"}
-{"id": "hw-1", "q": "What is the difference between bagging and boosting?", "a": "Bagging trains models independently on resampled data and averages them; boosting trains models sequentially, each correcting its predecessor's errors.", "gold": [], "chapter": "hand", "answerable": true, "src": "hand"}
-{"id": "hw-2", "q": "How do I fine-tune a language model with LoRA?", "a": null, "gold": [], "chapter": "hand", "answerable": false, "src": "hand"}
-{"id": "hw-3", "q": "What is retrieval-augmented generation and how do I build one?", "a": null, "gold": [], "chapter": "hand", "answerable": false, "src": "hand"}

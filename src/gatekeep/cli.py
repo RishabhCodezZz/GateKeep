@@ -21,7 +21,9 @@ def command(f):
         try:
             return f(*a)
         finally:
-            print(f"[ollama monthly usage {u0} -> {_usage()}]")
+            u1 = _usage()
+            if u0 is not None or u1 is not None:
+                print(f"[ollama monthly usage {u0} -> {u1}]")
     COMMANDS[f.__name__] = run
     return f
 
@@ -318,20 +320,6 @@ def calibrate():
         ck[gate] = [path, cal]
         print(f"{gate:10s} {len(recs)} dev rows | temperatures {[round(t, 3) for t in temps]} | binned buckets {binned}")
     json.dump(ck, open("models/ckpts.json", "w"))
-
-
-@command
-def token_check():
-    """Share of each gate's rows longer than Laya's state budget (max_len 1024 minus 256 for the question)."""
-    from huggingface_hub import snapshot_download
-    from laya.agent import _fix_tokenizer_config  # notebook 04 does the same before loading the tokenizer
-    from transformers import AutoTokenizer
-    model_dir = snapshot_download("convaiinnovations/laya", allow_patterns=["tokenizer/*", "*.json"])
-    _fix_tokenizer_config(model_dir)
-    tok = AutoTokenizer.from_pretrained(os.path.join(model_dir, "tokenizer"))
-    for p in sorted(Path("data/gates").glob("*_train.jsonl")):
-        n = [len(tok(r["text"]).input_ids) for r in read_rows(p)]
-        print(f"{p.stem:20s} over 768: {sum(x > 768 for x in n) / len(n):.1%} | longest {max(n)}")
 
 
 WEB_CORPORA = {  # name: (label, chunks file, how to prepare it, example questions)
