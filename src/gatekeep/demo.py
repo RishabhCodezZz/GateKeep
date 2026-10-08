@@ -20,10 +20,33 @@ class Recorder(Gate):
         return out
 
 
+# "Needed to answer" fails every passage of "what is bagging and boosting?": each one covers a single half.
+LENIENT_GRADE = "Does the passage help answer any part of the question, even if it covers only one part?"
+
+
+class AllNoFallback(Gate):
+    """Fast mode's grade gate: Laya decides, but when it rejects every passage Gemma re-checks them once.
+    Laya's grade gate learned "this passage alone answers the question", so it rejects every passage of a broad
+    or comparison question; the measured V2 has no such fallback (see README)."""
+    def __init__(self, fast, slow):
+        self.fast, self.slow, self.escalated = fast, slow, 0
+
+    def decide_many(self, gate, texts):
+        out = self.fast.decide_many(gate, texts)
+        self.last_s = self.fast.last_s
+        if len(texts) > 1 and all(label == "no" for label, _ in out):
+            out = self.slow.decide_many(gate, texts)
+            self.escalated += len(texts)
+        return out
+
+
+def who(e):
+    return "Laya" if not e["escalated"] else f"Laya, then Gemma for {e['escalated']} of {e['n']}"
+
+
 def gate_line(e):
-    who = "Laya" if not e["escalated"] else f"Laya, then Gemma for {e['escalated']} of {e['n']}"
     labels = e["labels"][0] if e["n"] == 1 else f"{e['labels'].count('yes')} of {e['n']} yes"
-    return f"   {e['gate']}: {labels} ({who}, {e['ms']} ms)"
+    return f"   {e['gate']}: {labels} ({e['who']}, {e['ms']} ms)"
 
 
 def describe(node, out):
@@ -44,22 +67,75 @@ def describe(node, out):
     return node
 
 
-def ask(question, index, llm, laya, taus, source="the scikit-learn user guide"):
-    """Run one question through the V3 cascade. Returns (answer, trace lines, passages, seconds)."""
-    log = []
-    gates = {g: Recorder(Cascade(laya, LLMGate(llm), taus[g]), log) for g in GATES}
-    app = build_graph(index, llm, gates)
-    trace, docs, answer, t0 = [], [], "", time.perf_counter()
+def _gates(mode, laya, llm, taus, log):
+    if mode == "fast":   # V2 (every gate by Laya), plus a Gemma re-check when Laya rejects every passage
+        recheck = LLMGate(llm, overrides={"grade": LENIENT_GRADE})
+        return {g: Recorder(AllNoFallback(laya, recheck) if g == "grade" else laya, log) for g in GATES}
+    if mode == "careful":  # V3: Laya first, Gemma when Laya is unsure; Gemma judges passages with the lenient question
+        judge = {g: LLMGate(llm, overrides={"grade": LENIENT_GRADE} if g == "grade" else None) for g in GATES}
+        return {g: Recorder(Cascade(laya, judge[g], taus[g]), log) for g in GATES}
+    raise ValueError(f"unknown mode {mode!r}: use 'fast', 'careful' or 'auto'")
+
+
+def ask_events(question, index, llm, laya, taus, mode="careful"):
+    """Run one question and yield what happens, step by step, for the trace and the web app."""
+    if mode == "auto":
+        yield from auto_events(question, index, llm, laya, taus)
+        return
+    log, t0 = [], time.perf_counter()
+    app = build_graph(index, llm, _gates(mode, laya, llm, taus, log))
+    docs, answer, route, flagged = [], "", None, False
     for update in app.stream({"q": question}, stream_mode="updates"):
         for node, out in update.items():
-            trace.append(describe(node, out))
-            trace += [gate_line(e) for e in log]
+            yield {"type": "step", "node": node, "text": describe(node, out)}
+            for e in log:
+                yield {"type": "gate", "gate": e["gate"], "labels": e["labels"], "n": e["n"], "who": who(e), "ms": e["ms"]}
             log.clear()
-            docs = out.get("docs", docs)
-            answer = out.get("answer", answer)
-    if answer == REFUSAL:  # the pipeline's fixed message says "this book"; name the corpus the app actually uses
-        answer = f"I can't answer that from {source}."
-    return answer, trace, [d["text"] for d in docs], time.perf_counter() - t0
+            docs, answer, route = out.get("docs", docs), out.get("answer", answer), out.get("route", route)
+            flagged = out.get("flagged", flagged)
+    refused = answer == REFUSAL
+    yield {"type": "passages", "items": [{"text": d["text"], "section": d.get("section", ""), "page": d.get("page"),
+                                          "source": d.get("source", "")} for d in ([] if refused else docs)]}
+    yield {"type": "answer", "text": answer, "refused": refused, "flagged": flagged,
+           "reason": ("off_topic" if route == "off_topic" else "no_passage") if refused else None}
+    yield {"type": "done", "seconds": round(time.perf_counter() - t0, 2)}
+
+
+def auto_events(question, index, llm, laya, taus):
+    """Fast first; if it finds no passage or can only offer a flagged answer, run Careful and show that result instead."""
+    t0, held = time.perf_counter(), []
+
+    def live(events):  # steps and gate decisions stream as they happen; the passages and answer wait until they are final
+        for ev in events:
+            if ev["type"] in ("passages", "answer", "done"):
+                held.append(ev)
+            else:
+                yield ev
+
+    yield from live(ask_events(question, index, llm, laya, taus, "fast"))
+    if held[1]["reason"] == "no_passage" or held[1]["flagged"]:
+        held.clear()
+        yield {"type": "step", "node": "escalate", "text": "Fast could not answer this, so Gemma takes over and judges every passage"}
+        yield from live(ask_events(question, index, llm, laya, taus, "careful"))
+    yield from held[:2]
+    yield {"type": "done", "seconds": round(time.perf_counter() - t0, 2)}
+
+
+def ask(question, index, llm, laya, taus, source="the scikit-learn user guide"):
+    """Run one question through the V3 cascade. Returns (answer, trace lines, passages, seconds)."""
+    trace, passages, answer, secs = [], [], "", 0.0
+    for ev in ask_events(question, index, llm, laya, taus, "careful"):
+        if ev["type"] == "step":
+            trace.append(ev["text"])
+        elif ev["type"] == "gate":
+            trace.append(gate_line(ev))
+        elif ev["type"] == "passages":
+            passages = [p["text"] for p in ev["items"]]
+        elif ev["type"] == "answer":  # the pipeline's fixed refusal says "this book"; name the corpus the app uses
+            answer = f"I can't answer that from {source}." if ev["refused"] else ev["text"]
+        elif ev["type"] == "done":
+            secs = ev["seconds"]
+    return answer, trace, passages, secs
 
 
 def launch(index, llm, laya, taus, examples=(), source="the scikit-learn user guide"):

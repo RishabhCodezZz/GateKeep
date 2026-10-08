@@ -1,5 +1,5 @@
 """Command line entry: python -m gatekeep.cli <command> [args...]"""
-import argparse, json
+import argparse, json, os
 from collections import Counter
 from pathlib import Path
 
@@ -285,16 +285,16 @@ def validate_grader(n="200"):
 
 
 @command
-def prepare_dir(folder):
-    """Parse every .html in a folder; chapter = file name. Writes data/chunks.json."""
+def prepare_dir(folder, out="data/chunks.json"):
+    """Parse every .html in a folder; chapter = file name. Writes the chunks to `out` (default data/chunks.json)."""
     from gatekeep import corpus
-    out = []
+    chunks = []
     for p in sorted(Path(folder).glob("*.html")):
         for c in corpus.chunk(corpus.parse(str(p)), tag=p.stem):
-            out.append({**c, "id": len(out)})
-    Path("data").mkdir(exist_ok=True)
-    json.dump(out, open("data/chunks.json", "w"))
-    print(len(out), "chunks from", len({c["chapter"] for c in out}), "pages")
+            chunks.append({**c, "id": len(chunks)})
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    json.dump(chunks, open(out, "w"))
+    print(len(chunks), "chunks from", len({c["chapter"] for c in chunks}), "pages ->", out)
 
 
 @command
@@ -323,7 +323,6 @@ def calibrate():
 @command
 def token_check():
     """Share of each gate's rows longer than Laya's state budget (max_len 1024 minus 256 for the question)."""
-    import os
     from huggingface_hub import snapshot_download
     from laya.agent import _fix_tokenizer_config  # notebook 04 does the same before loading the tokenizer
     from transformers import AutoTokenizer
@@ -333,6 +332,60 @@ def token_check():
     for p in sorted(Path("data/gates").glob("*_train.jsonl")):
         n = [len(tok(r["text"]).input_ids) for r in read_rows(p)]
         print(f"{p.stem:20s} over 768: {sum(x > 768 for x in n) / len(n):.1%} | longest {max(n)}")
+
+
+WEB_CORPORA = {  # name: (label, chunks file, how to prepare it, example questions)
+    "book": ("Hands-On ML", "data/chunks.json", "python -m gatekeep.cli prepare <your copy of the book>.pdf",
+             ["What is the difference between bagging and boosting?",
+              "Why does scaling matter for an SVM?",
+              "What does the learning rate actually change in gradient descent?"]),
+    "sklearn": ("scikit-learn docs", "data/sk/chunks.json",
+                "python scripts/fetch_sklearn_docs.py, then python -m gatekeep.cli prepare_dir data/sk data/sk/chunks.json",
+                ["What is the difference between bagging and boosting?",
+                 "How can I tell whether my clustering is any good?",
+                 "How do I fine-tune a large language model with LoRA?"]),
+}
+
+
+@command
+def web(port="8000"):
+    """Local web app on http://127.0.0.1:<port>: one search over the book and the scikit-learn docs; Fast first, Careful when Fast finds nothing."""
+    port = int(port)
+    if not os.environ.get("OLLAMA_API_KEY"):
+        raise SystemExit("OLLAMA_API_KEY is not set: load it with $env:OLLAMA_API_KEY = [Environment]::GetEnvironmentVariable('OLLAMA_API_KEY','User')")
+    import webbrowser
+    from gatekeep import demo
+    from gatekeep.corpus import Index, merge_chunks
+    from gatekeep.gates import LayaGate
+    from gatekeep.llm import LLM
+    from gatekeep.web import make_server
+    for f, fix in (("models/ckpts.json", "copy notebook 10's models/ folder into the project"),
+                   ("results/tau.json", "it comes from the evaluation run (notebook 11)")):
+        if not Path(f).exists():
+            raise SystemExit(f"{f} is missing: {fix}")
+    llm, taus = LLM(), json.load(open("results/tau.json"))
+    try:
+        laya = LayaGate.load(json.load(open("models/ckpts.json")))  # names any missing weights or calibration file
+    except Exception as e:
+        raise SystemExit(f"loading the Laya gates failed: {e} (if CUDA is out of memory, close other GPU apps)")
+    have = {n: c for n, c in WEB_CORPORA.items() if Path(c[1]).exists()}
+    for n, (label, _, prepare, _) in WEB_CORPORA.items():
+        if n not in have:
+            print(f"{label}: skipped, not prepared ({prepare})")
+    examples = list(dict.fromkeys(q for _, _, _, qs in have.values() for q in qs))[:4]  # shared questions listed once
+    print("building one index over", " and ".join(c[0] for c in have.values()) or "nothing")
+    corpora = {"all": {"label": " and ".join(c[0] for c in have.values()),
+                       "prepare": "; ".join(c[2] for n, c in WEB_CORPORA.items() if n not in have),
+                       "examples": examples,
+                       "index": Index(merge_chunks([(c[0], load_chunks(c[1])) for c in have.values()]), device="cpu") if have else None}}
+    srv = make_server(corpora, lambda q, index, mode: demo.ask_events(q, index, llm, laya, taus, mode), port)
+    url = f"http://127.0.0.1:{srv.server_address[1]}"
+    print("GateKeep is running at", url, "(Ctrl+C to stop)")
+    webbrowser.open(url)
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
 
 
 # --- new commands go above this line ---

@@ -1,4 +1,4 @@
-from gatekeep.gates import Cascade, Gate, LLMGate, SkGate
+from gatekeep.gates import GATES, Cascade, Gate, LLMGate, SkGate
 
 
 class FakeLLM:
@@ -93,3 +93,16 @@ def test_laya_gate_noul_label_from_raw_noul_confidence_from_binned():
     fake = FakeLaya([{"answers": {"grade": {"noul": 0.3, "answer_confidence": 0.55}}}])
     gate = LayaGate({"grade": fake})
     assert gate.decide_many("grade", ["x"]) == [("no", 0.55)]
+
+
+def test_llm_gate_can_use_other_instructions_for_one_gate():
+    class Spy(FakeLLM):
+        def chat(self, model, prompt, **kw):
+            self.prompt = prompt
+            return "yes"
+    llm = Spy("yes")
+    g = LLMGate(llm, overrides={"grade": "Does it help with any part?"})
+    g.decide("grade", "x")
+    assert llm.prompt.startswith("Does it help with any part?")
+    g.decide("sufficient", "x")
+    assert llm.prompt.startswith(GATES["sufficient"]["q"]["instructions"])
