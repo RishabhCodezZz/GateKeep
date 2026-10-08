@@ -19,6 +19,8 @@ class S(TypedDict, total=False):
     rewrites: int
     regens: int
     retry: bool
+    tried: list    # the passages of every search so far, to notice a rewrite that finds nothing new
+    repeat: bool
     feedback: str
     flagged: bool
     gate_calls: int
@@ -31,6 +33,14 @@ def gen_prompt(q, docs, feedback):
     fb = f"\nA reviewer said your previous answer was flawed: {feedback}.\n" if feedback else ""
     return ("Answer the question using only the passages. If they are not enough, say you cannot answer.\n\n"
             f"{ctx}\n\nQuestion: {q}\n{fb}Answer:")
+
+
+def clean_query(text, fallback):
+    """The model answers a rewrite request with markdown, quotes or a chatty list; keep one short query or the question itself."""
+    lines = [l.strip(" \t*_`\"'-•") for l in text.splitlines()]
+    lines = [l for l in lines if l and not l.endswith(":")]  # "Here are some queries:" is chatter
+    q = lines[0] if lines else ""
+    return q if 0 < len(q.split()) <= 12 else fallback
 
 
 def evidence(docs):
@@ -65,7 +75,10 @@ def make_nodes(index, llm, gates, model, use_gates, max_rewrites, max_regen, fee
         t0 = time.perf_counter()
         query = s.get("query") or s["q"]
         docs = index.rerank(query, index.search(query, 20), 5)
-        return {"docs": docs, "retr_s": s.get("retr_s", 0.0) + time.perf_counter() - t0}
+        key, seen = sorted(d["text"] for d in docs), s.get("tried", [])
+        repeat = key in seen  # grading the same passages again would only repeat the same verdict
+        return {"docs": [] if repeat else docs, "tried": seen + [key], "repeat": repeat,
+                "retr_s": s.get("retr_s", 0.0) + time.perf_counter() - t0}
 
     def grade(s):
         if not use_gates:
@@ -75,7 +88,7 @@ def make_nodes(index, llm, gates, model, use_gates, max_rewrites, max_regen, fee
 
     def rewrite(s):
         q = llm.chat(model, f"Rewrite as a short search query for a machine-learning textbook: {s['q']}", max_tokens=40)
-        return {"query": q.strip(), "rewrites": s.get("rewrites", 0) + 1}
+        return {"query": clean_query(q, s["q"]), "rewrites": s.get("rewrites", 0) + 1}
 
     def generate(s):
         temp = 0.7 if s.get("regens") else 0.0  # a blind retry at temperature 0 would repeat itself
@@ -99,6 +112,9 @@ def make_nodes(index, llm, gates, model, use_gates, max_rewrites, max_regen, fee
     def after_route(s):
         return {"retrieve": "retrieve", "direct": "direct", "off_topic": "refuse"}[s["route"]]
 
+    def after_retrieve(s):
+        return "refuse" if s.get("repeat") else "grade"
+
     def after_grade(s):
         if s["docs"]:
             return "generate"
@@ -109,18 +125,18 @@ def make_nodes(index, llm, gates, model, use_gates, max_rewrites, max_regen, fee
 
     nodes = dict(route=route, direct=direct, refuse=refuse, retrieve=retrieve, grade=grade,
                  rewrite=rewrite, generate=generate, check=check)
-    return nodes, after_route, after_grade, after_check
+    return nodes, after_route, after_retrieve, after_grade, after_check
 
 
 def build_graph(index, llm, gates, model=GEMMA, use_gates=True, max_rewrites=2, max_regen=2, feedback=False):
-    n, after_route, after_grade, after_check = make_nodes(
+    n, after_route, after_retrieve, after_grade, after_check = make_nodes(
         index, llm, gates, model, use_gates, max_rewrites, max_regen, feedback)
     g = StateGraph(S)
     for name, fn in n.items():
         g.add_node(name, fn)
     g.set_entry_point("route")
     g.add_conditional_edges("route", after_route, {"retrieve": "retrieve", "direct": "direct", "refuse": "refuse"})
-    g.add_edge("retrieve", "grade")
+    g.add_conditional_edges("retrieve", after_retrieve, {"grade": "grade", "refuse": "refuse"})
     g.add_conditional_edges("grade", after_grade, {"generate": "generate", "rewrite": "rewrite", "refuse": "refuse"})
     g.add_edge("rewrite", "retrieve")
     g.add_edge("generate", "check")
@@ -132,14 +148,14 @@ def build_graph(index, llm, gates, model=GEMMA, use_gates=True, max_rewrites=2, 
 
 def build_agents_graph(index, llm, gates, model=GEMMA, use_gates=True, max_rewrites=2, max_regen=2):
     """Same logic as build_graph plus critic feedback to the writer, wired as Researcher/Writer/Critic subgraphs."""
-    n, after_route, _, after_check = make_nodes(
+    n, after_route, after_retrieve, _, after_check = make_nodes(
         index, llm, gates, model, use_gates, max_rewrites, max_regen, feedback=True)
 
     researcher = StateGraph(S)
     for name in ("retrieve", "grade", "rewrite"):
         researcher.add_node(name, n[name])
     researcher.set_entry_point("retrieve")
-    researcher.add_edge("retrieve", "grade")
+    researcher.add_conditional_edges("retrieve", after_retrieve, {"grade": "grade", "refuse": END})
     researcher.add_conditional_edges(
         "grade", lambda s: "rewrite" if not s["docs"] and s.get("rewrites", 0) < max_rewrites else END,
         {"rewrite": "rewrite", END: END})

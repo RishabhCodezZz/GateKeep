@@ -88,3 +88,8 @@ def test_cross_site_and_rebinding_requests_get_403(url):
     assert status(lambda: post(url, ok, **{"Content-Type": "text/plain"})) == 403
     assert status(lambda: post(url, ok, Host=f"evil.example:{port}")) == 403
     assert status(lambda: post(url, ok, Host=f"localhost:{port}")) == 200
+
+
+def test_auto_is_an_accepted_mode(url):
+    ok = {"question": "q", "mode": "auto", "corpus": "book"}
+    assert post(url, ok).read().count(b"auto") == 1  # the fake ask echoes the mode it was given

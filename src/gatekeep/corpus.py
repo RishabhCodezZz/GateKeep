@@ -58,6 +58,14 @@ def chunk(doc, max_tokens=MAX_TOK, tag=None, starts=None):
     return out
 
 
+def merge_chunks(sources):
+    """sources = [(label, chunks)] -> one list for one Index: ids are positions again, and each passage keeps its source label."""
+    merged = []
+    for label, chunks in sources:
+        merged += [{**c, "id": len(merged) + i, "source": label} for i, c in enumerate(chunks)]
+    return merged
+
+
 class Index:
     def __init__(self, chunks, device=None):
         """device=None picks the GPU when there is one; the web app passes "cpu" to leave the 4 GB GPU to the Laya gates."""

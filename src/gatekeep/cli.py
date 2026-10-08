@@ -335,27 +335,27 @@ def token_check():
 
 
 WEB_CORPORA = {  # name: (label, chunks file, how to prepare it, example questions)
-    "book": ("Book", "data/chunks.json", "python -m gatekeep.cli prepare <your copy of the book>.pdf",
+    "book": ("Hands-On ML", "data/chunks.json", "python -m gatekeep.cli prepare <your copy of the book>.pdf",
              ["What is the difference between bagging and boosting?",
-              "Why do we scale features before training an SVM?",
-              "What does the learning rate do in gradient descent?"]),
+              "Why does scaling matter for an SVM?",
+              "What does the learning rate actually change in gradient descent?"]),
     "sklearn": ("scikit-learn docs", "data/sk/chunks.json",
                 "python scripts/fetch_sklearn_docs.py, then python -m gatekeep.cli prepare_dir data/sk data/sk/chunks.json",
                 ["What is the difference between bagging and boosting?",
-                 "How is the silhouette coefficient used to evaluate clustering?",
+                 "How can I tell whether my clustering is any good?",
                  "How do I fine-tune a large language model with LoRA?"]),
 }
 
 
 @command
 def web(port="8000"):
-    """Local web app on http://127.0.0.1:<port>: Fast (all Laya) or Careful (Laya, then Gemma), book or scikit-learn docs."""
+    """Local web app on http://127.0.0.1:<port>: one search over the book and the scikit-learn docs; Fast first, Careful when Fast finds nothing."""
     port = int(port)
     if not os.environ.get("OLLAMA_API_KEY"):
         raise SystemExit("OLLAMA_API_KEY is not set: load it with $env:OLLAMA_API_KEY = [Environment]::GetEnvironmentVariable('OLLAMA_API_KEY','User')")
     import webbrowser
     from gatekeep import demo
-    from gatekeep.corpus import Index
+    from gatekeep.corpus import Index, merge_chunks
     from gatekeep.gates import LayaGate
     from gatekeep.llm import LLM
     from gatekeep.web import make_server
@@ -368,12 +368,16 @@ def web(port="8000"):
         laya = LayaGate.load(json.load(open("models/ckpts.json")))  # names any missing weights or calibration file
     except Exception as e:
         raise SystemExit(f"loading the Laya gates failed: {e} (if CUDA is out of memory, close other GPU apps)")
-    corpora = {}
-    for name, (label, path, prepare, examples) in WEB_CORPORA.items():
-        ready = Path(path).exists()
-        print("building the", label, "index" if ready else "index: skipped, not prepared")
-        corpora[name] = {"label": label, "prepare": prepare, "examples": examples,
-                         "index": Index(load_chunks(path), device="cpu") if ready else None}
+    have = {n: c for n, c in WEB_CORPORA.items() if Path(c[1]).exists()}
+    for n, (label, _, prepare, _) in WEB_CORPORA.items():
+        if n not in have:
+            print(f"{label}: skipped, not prepared ({prepare})")
+    examples = list(dict.fromkeys(q for _, _, _, qs in have.values() for q in qs))[:4]  # shared questions listed once
+    print("building one index over", " and ".join(c[0] for c in have.values()) or "nothing")
+    corpora = {"all": {"label": " and ".join(c[0] for c in have.values()),
+                       "prepare": "; ".join(c[2] for n, c in WEB_CORPORA.items() if n not in have),
+                       "examples": examples,
+                       "index": Index(merge_chunks([(c[0], load_chunks(c[1])) for c in have.values()]), device="cpu") if have else None}}
     srv = make_server(corpora, lambda q, index, mode: demo.ask_events(q, index, llm, laya, taus, mode), port)
     url = f"http://127.0.0.1:{srv.server_address[1]}"
     print("GateKeep is running at", url, "(Ctrl+C to stop)")

@@ -33,15 +33,16 @@ class Gate:
 
 
 class LLMGate(Gate):
-    def __init__(self, llm, model=GEMMA):
-        self.llm, self.model, self.unparsed = llm, model, 0
+    def __init__(self, llm, model=GEMMA, overrides=None):
+        """overrides = {gate: instructions} asks this judge a different question than the fine-tuned gates were trained on."""
+        self.llm, self.model, self.unparsed, self.overrides = llm, model, 0, overrides or {}
 
     # ponytail: one LLM call per text, sequential, like typical LangGraph tutorials; a parallel judge would be faster
     def decide_many(self, gate, texts):
         q, labels, out = GATES[gate]["q"], labels_of(gate), []
         opts = "\n".join(f"- {k}: {v}" for k, v in q.get("criteria", {}).items())
         for t in texts:
-            prompt = (f"{q['instructions']}\n{opts}\n\nInput:\n{t}\n\n"
+            prompt = (f"{self.overrides.get(gate, q['instructions'])}\n{opts}\n\nInput:\n{t}\n\n"
                       f"Reply with exactly one word from: {', '.join(labels)}.")
             words = re.findall(r"[a-z_]+", self.llm.chat(self.model, prompt, max_tokens=16).lower())
             hit = next((w for w in words if w in labels), None)

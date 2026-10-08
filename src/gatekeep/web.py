@@ -6,7 +6,7 @@ from pathlib import Path
 
 STATIC = Path(__file__).parent / "static"
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8"}
-MODES = ("fast", "careful")
+MODES = ("fast", "careful", "auto")
 
 
 class _Server(ThreadingHTTPServer):
@@ -45,13 +45,17 @@ def make_server(corpora, ask, port=8000):
             self._send(200, f.read_bytes(), TYPES[f.suffix])
 
         def do_POST(self):
+            try:  # read the body first: replying and closing with it unread resets the connection on Windows
+                raw = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            except ValueError:
+                raw = b""
             if self.path != "/api/ask":
                 return self._send(404, {"error": "not found"})
             port = self.server.server_address[1]  # refuse cross-site posts and DNS rebinding
             if self.headers.get("Content-Type") != "application/json" or self.headers.get("Host") not in (f"127.0.0.1:{port}", f"localhost:{port}"):
                 return self._send(403, {"error": "local page only"})
             try:
-                req = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                req = json.loads(raw)
                 question, mode, corpus = req["question"].strip(), req["mode"], req["corpus"]
             except (ValueError, KeyError, TypeError, AttributeError):
                 return self._send(400, {"error": "send JSON with question, mode and corpus"})

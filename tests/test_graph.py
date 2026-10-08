@@ -1,5 +1,5 @@
 from gatekeep.gates import Gate
-from gatekeep.graph import REFUSAL, build_agents_graph, build_graph
+from gatekeep.graph import REFUSAL, build_agents_graph, build_graph, clean_query
 
 
 class FakeIndex:
@@ -18,6 +18,15 @@ class FakeLLM:
         self.logical_calls += 1
         self.prompts.append(prompt)
         return "short query" if prompt.startswith("Rewrite") else "an answer"
+
+
+class NewDocsIndex:
+    """A different set of passages for every query, like a rewrite that finds something new."""
+    def search(self, q, k=20):
+        return [{"id": i, "text": f"{q}-t{i}"} for i in range(5)]
+
+    def rerank(self, q, hits, k=5):
+        return hits[:k]
 
 
 class Scripted(Gate):
@@ -45,9 +54,39 @@ def test_off_topic_refuses_without_retrieval():
     assert r["answer"] == REFUSAL and "docs" not in r
 
 
+def no(g, t):
+    return ("retrieve", 1.0) if g == "route" else ("no", 1.0)
+
+
 def test_no_relevant_docs_rewrites_twice_then_refuses():
-    r = app(lambda g, t: ("retrieve", 1.0) if g == "route" else ("no", 1.0)).invoke({"q": "x"})
+    r = build_graph(NewDocsIndex(), FakeLLM(), gates(no)).invoke({"q": "x"})
     assert r["answer"] == REFUSAL and r["rewrites"] == 2
+
+
+def test_a_rewrite_that_finds_the_same_passages_stops_without_grading_them_again():
+    r = app(no).invoke({"q": "x"})
+    assert r["answer"] == REFUSAL and r["rewrites"] == 1 and r["gate_calls"] == 1 + 5  # route + one grading of 5
+
+
+def test_agents_graph_also_stops_on_repeated_passages():
+    r = build_agents_graph(FakeIndex(), FakeLLM(), gates(no)).invoke({"q": "x"})
+    assert r["answer"] == REFUSAL and r["rewrites"] == 1 and r["gate_calls"] == 1 + 5
+
+
+def test_clean_query_drops_markdown_quotes_and_chatter():
+    assert clean_query('**"bagging vs boosting"**', "q") == "bagging vs boosting"
+    assert clean_query("Sure, try:\n\n**boosting**\n- other idea", "q") == "boosting"
+    assert clean_query("\n`boosting`\nOther ideas:\n- x", "q") == "boosting"
+    assert clean_query("**", "what is x?") == "what is x?"
+    assert clean_query("a b c d e f g h i j k l m", "q") == "q"  # a reply that is not a short query falls back to the question
+
+
+def test_the_rewritten_query_is_cleaned_before_searching():
+    class Markdown(FakeLLM):
+        def chat(self, model, prompt, **kw):
+            return "**\"bagging vs boosting\"**" if prompt.startswith("Rewrite") else "an answer"
+    r = build_graph(NewDocsIndex(), Markdown(), gates(no)).invoke({"q": "x"})
+    assert r["query"] == "bagging vs boosting"
 
 
 def test_failed_check_regenerates_once_then_passes():

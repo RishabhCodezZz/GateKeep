@@ -20,6 +20,10 @@ class Recorder(Gate):
         return out
 
 
+# "Needed to answer" fails every passage of "what is bagging and boosting?": each one covers a single half.
+LENIENT_GRADE = "Does the passage help answer any part of the question, even if it covers only one part?"
+
+
 class AllNoFallback(Gate):
     """Fast mode's grade gate: Laya decides, but when it rejects every passage Gemma re-checks them once.
     Laya's grade gate learned "this passage alone answers the question", so it rejects every passage of a broad
@@ -65,17 +69,22 @@ def describe(node, out):
 
 def _gates(mode, laya, llm, taus, log):
     if mode == "fast":   # V2 (every gate by Laya), plus a Gemma re-check when Laya rejects every passage
-        return {g: Recorder(AllNoFallback(laya, LLMGate(llm)) if g == "grade" else laya, log) for g in GATES}
-    if mode == "careful":  # V3: Laya first, Gemma when Laya is unsure
-        return {g: Recorder(Cascade(laya, LLMGate(llm), taus[g]), log) for g in GATES}
-    raise ValueError(f"unknown mode {mode!r}: use 'fast' or 'careful'")
+        recheck = LLMGate(llm, overrides={"grade": LENIENT_GRADE})
+        return {g: Recorder(AllNoFallback(laya, recheck) if g == "grade" else laya, log) for g in GATES}
+    if mode == "careful":  # V3: Laya first, Gemma when Laya is unsure; Gemma judges passages with the lenient question
+        judge = {g: LLMGate(llm, overrides={"grade": LENIENT_GRADE} if g == "grade" else None) for g in GATES}
+        return {g: Recorder(Cascade(laya, judge[g], taus[g]), log) for g in GATES}
+    raise ValueError(f"unknown mode {mode!r}: use 'fast', 'careful' or 'auto'")
 
 
 def ask_events(question, index, llm, laya, taus, mode="careful"):
     """Run one question and yield what happens, step by step, for the trace and the web app."""
+    if mode == "auto":
+        yield from auto_events(question, index, llm, laya, taus)
+        return
     log, t0 = [], time.perf_counter()
     app = build_graph(index, llm, _gates(mode, laya, llm, taus, log))
-    docs, answer, route = [], "", None
+    docs, answer, route, flagged = [], "", None, False
     for update in app.stream({"q": question}, stream_mode="updates"):
         for node, out in update.items():
             yield {"type": "step", "node": node, "text": describe(node, out)}
@@ -83,11 +92,32 @@ def ask_events(question, index, llm, laya, taus, mode="careful"):
                 yield {"type": "gate", "gate": e["gate"], "labels": e["labels"], "n": e["n"], "who": who(e), "ms": e["ms"]}
             log.clear()
             docs, answer, route = out.get("docs", docs), out.get("answer", answer), out.get("route", route)
+            flagged = out.get("flagged", flagged)
     refused = answer == REFUSAL
-    yield {"type": "passages", "items": [{"text": d["text"], "section": d.get("section", ""), "page": d.get("page")}
-                                         for d in ([] if refused else docs)]}
-    yield {"type": "answer", "text": answer, "refused": refused,
+    yield {"type": "passages", "items": [{"text": d["text"], "section": d.get("section", ""), "page": d.get("page"),
+                                          "source": d.get("source", "")} for d in ([] if refused else docs)]}
+    yield {"type": "answer", "text": answer, "refused": refused, "flagged": flagged,
            "reason": ("off_topic" if route == "off_topic" else "no_passage") if refused else None}
+    yield {"type": "done", "seconds": round(time.perf_counter() - t0, 2)}
+
+
+def auto_events(question, index, llm, laya, taus):
+    """Fast first; if it finds no passage or can only offer a flagged answer, run Careful and show that result instead."""
+    t0, held = time.perf_counter(), []
+
+    def live(events):  # steps and gate decisions stream as they happen; the passages and answer wait until they are final
+        for ev in events:
+            if ev["type"] in ("passages", "answer", "done"):
+                held.append(ev)
+            else:
+                yield ev
+
+    yield from live(ask_events(question, index, llm, laya, taus, "fast"))
+    if held[1]["reason"] == "no_passage" or held[1]["flagged"]:
+        held.clear()
+        yield {"type": "step", "node": "escalate", "text": "Fast could not answer this, so Gemma takes over and judges every passage"}
+        yield from live(ask_events(question, index, llm, laya, taus, "careful"))
+    yield from held[:2]
     yield {"type": "done", "seconds": round(time.perf_counter() - t0, 2)}
 
 
