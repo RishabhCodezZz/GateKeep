@@ -1,23 +1,35 @@
 # GateKeep
 
-GateKeep answers questions about two sources: Géron's *Hands-On Machine Learning* and the scikit-learn user guide. It exists to test one idea: can a small fine-tuned model make the judgment calls inside a RAG pipeline instead of a large LLM?
+GateKeep is a RAG application for asking questions about documents, with fine-tuned Laya gates and a LangGraph workflow. It searches a machine-learning textbook and the scikit-learn user guide, generates answers from retrieved passages, and shows the sources and checks behind each response in a local web interface.
 
-A multi-step RAG pipeline has to decide whether a question needs a lookup, whether each retrieved passage is relevant, whether the answer is backed by the passages, and whether it answers the question. We call these four decisions gates. Laya, a 421M-parameter model fine-tuned once per gate, makes them in about 35 ms each on a Kaggle T4. Gemma 4 31B writes the answers and steps in when Laya is unsure.
+A RAG pipeline retrieves passages to help a model answer a question. GateKeep adds four checks: whether to retrieve, which passages are relevant, whether the answer is supported, and whether it addresses the question. Laya is a 421M-parameter model, fine-tuned separately for each check. Gemma 4 31B writes the answers and can handle decisions passed to it by the gates.
 
-## What we found
+## Why Laya
 
-On 343 questions from held-out chapters:
+Decision models such as [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev) prompted my interest in using typed decisions inside AI workflows. I chose [Laya](https://huggingface.co/convaiinnovations/laya), an open-source model with an Apache 2.0 license, to build that decision layer in GateKeep. Its local inference and fine-tuning support let me train the four gates, calibrate their confidence and connect their outputs to the RAG workflow.
 
-- Laya's gates match the all-Gemma gates on correctness (92.1% against 91.5%) and make no LLM calls for the gates.
-- The cascade, where Gemma checks only the decisions Laya is unsure about, also scores 91.5%. But it cuts gate-level LLM calls only 1.3 times against a target of 5, so the cost goal failed.
-- The router works. It sends 99% of book questions to retrieval and turns away all 40 off-topic test messages.
-- Skipping the gates entirely scored highest, 95.6%. Most of the gap comes from the gated variants refusing 15 to 23 answerable questions.
+## Features
 
-Tables, plots, the v1 results and the full list of limits are in [docs/RESULTS.md](docs/RESULTS.md).
+- A document pipeline with Docling parsing, FAISS search, cross-encoder reranking and source metadata. The web app searches Géron's *Hands-On Machine Learning* and the scikit-learn user guide together.
+- Interchangeable gate backends: a TF-IDF classifier, LLM judges, zero-shot Laya, fine-tuned Laya and a confidence-based cascade.
+- A fine-tuning and calibration workflow on Kaggle, with separate train, dev and test data and confidence thresholds selected on dev.
+- Query rewriting and answer regeneration with bounded retries, plus a local demo that traces the decisions as they happen.
+
+Four separately fine-tuned Laya models handle the gate decisions. Calibration and per-gate thresholds control when the cascade asks Gemma to make a decision. The repository includes the training notebooks, evaluation scripts and results from both rounds of development.
+
+## Evaluation
+
+The end-to-end comparison uses 343 questions from held-out chapters. Router figures come from the separate 453-example gate test:
+
+- The pipeline with Laya handling all four gates scored 92.1% correctness, compared with 91.5% for Gemma gates. It made about 1.5 total LLM calls per question versus 10.9; Gemma still wrote the answers.
+- Fine-tuned Laya scored higher macro-F1 than Gemma on routing, grounding and sufficiency. Its median gate latency was 35 to 42 ms on a Kaggle T4; Gemma timings include network API calls.
+- The router sent 99% of retrieval examples to search and identified all 40 off-topic test messages.
+
+These figures describe the evaluated Laya-gated configuration. The web app adds a passage re-check and automatic fallback for interactive use. Comparisons with the ungated baseline, cascade results, benchmark targets and evaluation scope are documented in [docs/RESULTS.md](docs/RESULTS.md).
 
 ## The web app
 
-A local page where you ask a question and watch each gate decide. Every question searches both sources at once, and each passage says which one it came from. Laya checks the passages first. If that finds nothing usable, Gemma takes over and judges every passage. You see only the final answer, with a line saying who made which checks.
+Ask a question and watch the retrieval and gate decisions as they happen. Every question searches both prepared sources together, and each passage names its source. Laya checks the passages first, with a Gemma re-check if all are rejected. If the first attempt finds no supporting passage or ends with a flagged answer, the app runs the cascade and displays its result. The final answer includes supporting passages and a trace of who performed the checks.
 
 ### Setup
 
@@ -26,6 +38,7 @@ You need Python 3.12 and an Ollama Cloud API key. The book is copyrighted, so br
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+$env:PYTHONPATH = "src"
 ```
 
 Prepare the two sources once:
@@ -39,10 +52,17 @@ Prepare the two sources once:
 ### Run
 
 ```powershell
-$env:OLLAMA_API_KEY = [Environment]::GetEnvironmentVariable('OLLAMA_API_KEY','User'); $env:PYTHONPATH = "src"; .\.venv\Scripts\python.exe -m gatekeep.cli web
+$env:OLLAMA_API_KEY = [Environment]::GetEnvironmentVariable('OLLAMA_API_KEY','User')
+.\.venv\Scripts\python.exe -m gatekeep.cli web
 ```
 
-Starting takes 8 to 10 minutes while it builds the search index on the CPU. Then it opens http://127.0.0.1:8000. A normal answer takes 10 to 20 seconds on a 4 GB laptop GPU. If Laya fails and Gemma takes over, expect 30 to 45.
+On the tested laptop, startup takes 8 to 10 minutes while the CPU builds the search index. The app then opens http://127.0.0.1:8000. Answers typically take 10 to 20 seconds with a 4 GB laptop GPU, or 30 to 45 seconds when the app runs the cascade after the first attempt.
+
+## Using and adapting GateKeep
+
+Use the local app to explore machine-learning concepts and inspect the passages behind an answer. Each question runs independently. The gate trace is also useful for demonstrating how retrieval, filtering and answer checks fit together.
+
+The shared gate interface lets you compare backends or study one gate at a time. To adapt the project to another domain, prepare its documents and update the machine-learning-specific router criteria and training data. The notebooks provide the workflow for fine-tuning, calibration and evaluation.
 
 ## Tests
 
@@ -59,11 +79,11 @@ The unit tests need no models or API keys, and `requirements-test.txt` is enough
 - `results/`: the published CSVs and plots, with the first round in `results/v1/`.
 - `docs/`: `RESULTS.md` is the full write-up, and `superpowers/specs/` has the design with its pre-registered criteria.
 
-## Limits
+## Evaluation scope
 
-- LLMs supplied the training labels and the final grades, so the results rest on those judgments.
+- LLMs supplied the training labels and final grades. Their judgments define the reported scores; the detailed write-up explains the human checks and grader comparison.
 - Gemma runs on a free tier whose limits and model versions can change. Every call is cached.
-- The scikit-learn test is small (105 questions, 30% unanswerable), so it says little about how well the gates generalise.
+- The scikit-learn run explores transfer to a second source using 105 questions, 30% unanswerable. Broader transfer remains a direction for further evaluation.
 - The notebooks install unpinned packages, so a rerun can differ from the recorded environment.
 
 ## Credits

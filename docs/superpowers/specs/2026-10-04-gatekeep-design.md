@@ -1,21 +1,23 @@
-# GateKeep: measured agentic RAG — Design
+# GateKeep: agentic RAG design
 
 Date: 2026-10-04 · Historical design document. The code, `results/` and the README are the source of truth where they differ.
 
+Current project context: interest in typed-decision models such as [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev) motivated the use of open-source [Laya](https://huggingface.co/convaiinnovations/laya) for GateKeep's four gates. The original scope and benchmark criteria below are retained as a record of the experiment design.
+
 ## Question
 
-In an agentic RAG graph, an LLM is normally called for every small judgment ("is this chunk relevant?", "is the answer grounded?"). Can a fine-tuned **Laya** (421M, non-autoregressive, ~33 ms) make those judgments instead, and when should it hand off to the LLM? The deliverable is a measured answer (table + plots), not a product.
+GateKeep uses fine-tuned Laya gates inside an agentic RAG graph to judge passage relevance, answer grounding and other workflow decisions. The original design explores when Laya (421M, non-autoregressive, ~33 ms) can make these decisions and when it should hand them to an LLM. Its planned deliverables include the implementation, measured comparisons, tables and plots. The current project also includes a local web app; the README describes that interface.
 
-## Non-goals
+## Original scope
 
-- No Jev (waitlist, closed API). No live hosting (public repo + README plots + 90 s screen recording).
-- No claim of novelty: Adaptive-RAG and Corrective RAG already use small classifiers as gates, and Laya already ships a `LayaRouter` for LangGraph. The contribution is the measurement on a two-week-old model.
-- Laya is not used as a retriever or primary reranker; a cross-encoder does that. Laya-as-reranker is a small ablation only.
+- Use accessible models and APIs; Jev was waitlisted with a closed API at design time. The original delivery plan is a public repository, README plots and a 90 s screen recording, with hosting outside that scope.
+- Build on classifier-gating approaches such as Adaptive-RAG and Corrective RAG and Laya's `LayaRouter` for LangGraph. The focus is integrating Laya across four gates and measuring their behavior.
+- Use a cross-encoder as the primary reranker. Evaluate Laya as a reranker in a separate ablation.
 
 ## Corpus
 
-Primary: Géron, *Hands-On ML with Scikit-Learn, Keras & TensorFlow* (2nd ed.). Parsed once with **Docling**, chunked with Docling's HybridChunker (tokenizer = bge-small, `max_tokens=300`, because Laya reads ~512 tokens and G2 input is question + chunk). Each chunk keeps `section` (Docling heading path) and `page`; its `chapter` comes from the PDF bookmarks by page (Docling's headings are a flat list of section titles, not chapters).
-The book is copyrighted: it and everything derived from it stay in **private** storage (git-ignored `data/`, `cache/`; private HF dataset repo for persistence between Kaggle sessions). The public repo ships code and aggregate results only.
+Primary: Géron, *Hands-On ML with Scikit-Learn, Keras & TensorFlow* (2nd ed.). Parsed once with Docling, chunked with Docling's HybridChunker (tokenizer = bge-small, `max_tokens=300`, because Laya reads ~512 tokens and G2 input is question + chunk). Each chunk keeps `section` (Docling heading path) and `page`; its `chapter` comes from the PDF bookmarks by page (Docling's headings are a flat list of section titles, not chapters).
+The book is copyrighted: it and everything derived from it stay in private storage (git-ignored `data/`, `cache/`; private HF dataset repo for persistence between Kaggle sessions). The public repo ships code and aggregate results only.
 Out-of-distribution corpus: the scikit-learn user guide (HTML pages; license to be confirmed on first fetch, believed BSD-3).
 
 ## Pipeline (LangGraph)
@@ -39,22 +41,22 @@ question → G1 route ─ direct/out_of_scope → answer or refusal
 Every gate is answered by an interchangeable backend with one interface: `decide_many(gate, texts) -> [(label, confidence)]`.
 Backends: `LLMGate` (Gemma, thinking off), `SkGate` (TF-IDF + logistic regression baseline), `LayaGate` (zero-shot or fine-tuned), `Cascade(fast, slow, tau)`.
 
-Variants: **V0** no gates · **V1** all gates by Gemma · **V2** all gates by Laya · **V3** Laya→Gemma cascade.
+Variants: V0 no gates · V1 all gates by Gemma · V2 all gates by Laya · V3 Laya→Gemma cascade.
 Multi-agent ablation: flat graph (blind retry) vs Researcher / Writer / Critic subgraphs where the Critic passes its reason to the Writer. The measured difference is the feedback channel; the subgraph split itself is structure.
 
 ## Models (via Ollama Cloud with the author's API key; NVIDIA NIM is a switchable fallback)
 
-- Gemma 4 31B (`gemma4:31b` on Ollama): answer writer and the baseline LLM judge (a realistic mid-size judge, so the comparison is not a strawman).
-- Nemotron 3 Super (`nemotron-3-super` on Ollama): labeler for training data and grader of final answers (different family from the writer, so no self-grading). Chosen over Ultra after measuring quota on 2026-10-04: Ultra cost ~0.00018 of the monthly quota and 8.9 s per call, Super ~0.00004 and 1.9 s, Gemma ~0.00002 and 0.4 s.
+- Gemma 4 31B (`gemma4:31b` on Ollama): answer writer and baseline LLM judge for the gate comparisons.
+- Nemotron 3 Super (`nemotron-3-super` on Ollama): labeler for training data and grader of final answers, from a different model family than the writer. Selected after measuring quota on 2026-10-04: Ultra cost ~0.00018 of the monthly quota and 8.9 s per call, Super ~0.00004 and 1.9 s, Gemma ~0.00002 and 0.4 s.
 - Nemotron 3 Ultra: only validates Super. About 200 grading calls are repeated with Ultra and the agreement rate is reported.
 - Laya: `convaiinnovations/laya`, typed-decisions checkpoint as the fine-tuning base; one fine-tuned copy per gate on Kaggle 2×T4.
 
 ## Data and splits
 
 - Questions are generated from chunks (Super), single-chunk and two-chapter multi-hop; the source chunk is the gold passage. Unanswerable questions target topics absent from the book (guarded by a substring check).
-- **Split by chapter, never randomly** (the book repeats itself): train / dev / test chapters. Unanswerable topics are split the same way.
+- Use separate train / dev / test chapters to account for material repeated within the book. Unanswerable topics are split the same way.
 - The author hand-writes 50–100 questions (evaluation only; reported separately because they are not chapter-held-out) and hand-checks 50 generated items.
-- G3 training data uses real Gemma answers from retrieved passages, generated at temperatures 0.0 and 0.7 and labeled by Super. Dev and test rows use temperature 0.0. The first design used faithful answers against corrupted ones, but the writing style gave the class away, so it was replaced. Real-hallucination data (RAGTruth) is an optional extension only if G3 underperforms.
+- G3 training data uses real Gemma answers from retrieved passages, generated at temperatures 0.0 and 0.7 and labeled by Super. Dev and test rows use temperature 0.0. This replaces the first design's faithful-versus-corrupted answers, whose writing style revealed the class. Real-hallucination data (RAGTruth) is an optional extension for further G3 evaluation.
 - Dev set picks the cascade threshold per gate; test is touched once per reported number.
 
 ## Evaluation
@@ -63,10 +65,10 @@ Per gate: macro-F1, ECE, p50/p95 latency per decision, coverage-vs-accuracy curv
 End to end (V0–V3, ~300 answerable + ~32 unanswerable test questions, handwritten set separately): correctness and faithfulness (Super), LLM calls per question, gate LLM calls, latency, 95% bootstrap CIs. Latency of cached LLM calls replays the original measured latency.
 OOD: rerun V1 and V3 on the scikit-learn corpus with the book-trained gates.
 
-## Success criteria (fixed before any run)
+## Benchmark criteria (fixed before any run)
 
-Primary: V3 correctness within 2.5 points of V1 **and** at least 5× fewer gate-level LLM calls than V1.
-Equally publishable outcomes: Laya fails on some gates (likely G3/G4), and the report says where and why; or a sklearn baseline is already enough on G1/G2.
+Primary: V3 correctness within 2.5 points of V1 and at least 5× fewer gate-level LLM calls than V1.
+The report records the behavior of every gate, including cases needing LLM fallback and tasks handled by the sklearn baseline. Those comparisons inform which backend to use for each decision.
 
 ## Deliverables
 
@@ -74,14 +76,14 @@ GitHub repo (code, results CSV/PNG, README with the plots), write-up in the READ
 
 The public Kaggle demo notebook is deferred at the author's request. Readers can reproduce the experiments with the repository notebooks, using their own corpus, API credentials and saved backups. The demo is not required for the current delivery.
 
-## Risks
+## Implementation checks
 
-1. Laya weak on G3/G4 (hard tasks, small window) → the cascade covers it; report honestly.
-2. Docling mangles code/equations or chapter detection → compare with PDF bookmarks; fallback PyMuPDF4LLM.
-3. LLM-made labels are not ground truth → hand-check 50, use human questions.
-4. Free-tier limits or model changes → cache every call, pin model IDs, log versions. Ollama Cloud's free quota is unpublished and GPU-time based; Task 1 measures it before we commit, with NIM (40 req/min, no daily cap) as the fallback.
-5. Kaggle sessions end → persist `data/ cache/ results/ models/` to a private HF dataset repo.
-6. Laya API details taken from its README summary (fine-tune API, noul answer encoding) → verified in Tasks 1 and 8 before use.
+1. Evaluate G3/G4 within their input window and use the cascade for decisions that need an LLM.
+2. Check Docling's code, equation and chapter parsing against PDF bookmarks; PyMuPDF4LLM is the planned fallback.
+3. Review 50 generated items by hand and include human-written questions alongside LLM labels.
+4. Cache calls, pin model IDs and log versions to support reruns across free-tier limits and model updates. The original plan measures Ollama Cloud quota use in Task 1, with NIM as a fallback.
+5. Persist `data/ cache/ results/ models/` in private storage between Kaggle sessions.
+6. Verify Laya's fine-tuning API and noul answer encoding in Tasks 1 and 8 before use.
 
 ## Open items
 
@@ -89,7 +91,7 @@ Injection-shield gate stays a stretch goal for the buffer weeks.
 
 ## v2 addendum (2026-10-07, written before any v2 run)
 
-v1 found five mistakes: a router asked to judge book coverage from the question alone, trained on 48 out-of-scope questions about 6 topics; copied rows that leaked into the calibration slice; hard 0/1 targets; a router threshold of 0.5 that never consulted Gemma; and a 1,200-character evidence cap on checkpoints that read 1,024 tokens. v2 fixes all five (see docs/RESULTS.md).
+v2 incorporates five refinements identified in the first round: a router task separating machine-learning questions from off-topic messages, replacing coverage judgments based on 48 out-of-scope questions about 6 topics; separate training and calibration rows; soft targets replacing hard 0/1 targets; an accuracy floor for thresholds beyond the original 0.5 router setting; and a larger evidence window than the original 1,200-character cap for checkpoints that read 1,024 tokens. The original calibration slice included copied training rows; v2 fits calibration on the separate dev split. The changes and measurements are documented in docs/RESULTS.md.
 
 Criteria, fixed now:
 1. Primary, unchanged from v1: V3 correctness within 2.5 points of V1 and at least 5x fewer gate-level LLM calls than V1, on the same 343-question test set.
