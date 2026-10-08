@@ -87,10 +87,9 @@ function newTurn(question, label) {
   const chips = el("div", "chips");
   const trace = el("details", "trace");
   trace.open = true;
-  const strip = el("span", "strip");
   const verdict = el("span", "", "How this answer was checked");
   const summary = el("summary", "verdict");
-  summary.append(strip, verdict);
+  summary.append(verdict);
   trace.append(summary);
   const rows = el("ol");
   trace.append(rows);
@@ -115,7 +114,6 @@ function newTurn(question, label) {
         checks++;
         const gemma = ev.who.includes("Gemma");
         byGemma += gemma;
-        strip.append(el("i", gemma ? "gemma" : "laya"));
         const row = el("li", "gate", `${ev.gate}: ${ev.n === 1 ? ev.labels[0] : ev.labels.filter((l) => l === "yes").length + " of " + ev.n + " yes"}`);
         row.append(el("span", "badge " + (gemma ? "gemma" : "laya"), ev.who), el("span", "ms", ev.ms + " ms"));
         rows.append(row);

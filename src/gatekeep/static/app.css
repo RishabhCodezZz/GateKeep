@@ -115,9 +115,6 @@ pre.math { margin: 0 0 10px; padding: 10px 14px; border-radius: 12px; white-spac
 .trace summary::-webkit-details-marker { display: none; }
 .trace summary::after { content: "▾"; margin-left: auto; color: var(--muted); transition: transform .15s; }
 .trace[open] summary::after { transform: rotate(180deg); }
-.strip { display: inline-flex; gap: 4px; }
-.strip i { width: 10px; height: 10px; background: var(--primary); border-radius: 50%; }
-.strip i.gemma { background: var(--muted); border-radius: 2px; transform: rotate(45deg) scale(.85); }
 .trace ol { list-style: none; padding: 8px 0 0 4px; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .trace .gate { padding-left: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
 .badge { font-size: 12px; padding: 1px 10px; border-radius: 999px; }
