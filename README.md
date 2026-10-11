@@ -4,6 +4,14 @@ GateKeep is a RAG application for asking questions about documents, with fine-tu
 
 A RAG pipeline retrieves passages to help a model answer a question. GateKeep adds four checks: whether to retrieve, which passages are relevant, whether the answer is supported, and whether it addresses the question. Laya is a 421M-parameter model, fine-tuned separately for each check. Gemma 4 31B writes the answers and can handle decisions passed to it by the gates.
 
+## Demo
+
+Ask questions, inspect the supporting passages, and follow the gate decisions behind each answer.
+
+
+https://github.com/user-attachments/assets/9f4202ee-d6cf-405e-a0ff-55b653cfcaf3
+
+
 ## Why Laya
 
 Decision models such as [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev) prompted my interest in using typed decisions inside AI workflows. I chose [Laya](https://huggingface.co/convaiinnovations/laya), an open-source model with an Apache 2.0 license, to build that decision layer in GateKeep. Its local inference and fine-tuning support let me train the four gates, calibrate their confidence and connect their outputs to the RAG workflow.
