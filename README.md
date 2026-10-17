@@ -2,6 +2,8 @@
 
 GateKeep is a RAG application for asking questions about documents, with fine-tuned Laya gates and a LangGraph workflow. It searches a machine-learning textbook and the scikit-learn user guide, generates answers from retrieved passages, and shows the sources and checks behind each response in a local web interface.
 
+The version without gates had the highest LLM-graded answer correctness: 95.6% on 343 test questions. That result comes from the first evaluation round and was carried forward as a reference; the updated gated versions were tested in the second round.
+
 A RAG pipeline retrieves passages to help a model answer a question. GateKeep adds four checks: whether to retrieve, which passages are relevant, whether the answer is supported, and whether it addresses the question. Laya is a 421M-parameter model, fine-tuned separately for each check. Gemma 4 31B writes the answers and can handle decisions passed to it by the gates.
 
 ## Demo
@@ -33,7 +35,7 @@ The end-to-end comparison uses 343 questions from held-out chapters. Router figu
 - Fine-tuned Laya scored higher macro-F1 than Gemma on routing, grounding and sufficiency. Its median gate latency was 35 to 42 ms on a Kaggle T4; Gemma timings include network API calls.
 - The router sent 99% of retrieval examples to search and identified all 40 off-topic test messages.
 
-These figures describe the evaluated Laya-gated configuration. The web app adds a passage re-check and automatic fallback for interactive use. Comparisons with the ungated baseline, cascade results, benchmark targets and evaluation scope are documented in [docs/RESULTS.md](docs/RESULTS.md).
+These figures describe the evaluated Laya-gated configuration. The web app adds a passage re-check and automatic fallback for interactive use. Full variant results, benchmark targets and evaluation scope are documented in [docs/RESULTS.md](docs/RESULTS.md).
 
 ## The web app
 
